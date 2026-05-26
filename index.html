@@ -53,6 +53,9 @@ tr:hover td{background:rgba(51,65,85,.3)}
     <div style="background:rgba(51,65,85,.5);border-radius:8px;padding:12px;margin-top:8px;font-size:12px;color:#64748b">
       <b style="color:#94a3b8">Expected columns:</b> Livestream Name · Start Time · Duration · Viewers · ATC · Orders · Sales (Shopee Live export format)
     </div>
+    <div id="modal-clear-wrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(71,85,105,.4);text-align:center">
+      <button onclick="if(confirm('Clear all uploaded data and return to demo mode?'))clearData();" style="background:none;border:none;color:#64748b;font-size:12px;cursor:pointer;text-decoration:underline">Clear all uploaded data &amp; reset to demo</button>
+    </div>
   </div>
 </div>
 
@@ -302,11 +305,10 @@ function renderFilters(){
     opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="'+col+'">'+hh+'</option>';
   });
   h+='<select class="hsel" onchange="setHostSel(this.value)">'+opts+'</select>';
-  // File count + clear button when real data is loaded
+  // File count info when real data is loaded (no reset button here to avoid accidents)
   if(!ST.isDemo){
     h+='<span style="color:#334155;margin:0 4px">|</span>';
     h+='<span style="font-size:12px;color:#64748b">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' · '+ST.raw.length+' sessions</span>';
-    h+='<button onclick="clearData()" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:500;border:1px solid #475569;background:transparent;color:#94a3b8;cursor:pointer">✕ Reset</button>';
   }
   h+='</div>';
   document.getElementById('filters').innerHTML=h;
@@ -553,6 +555,9 @@ function openModal(){
     if(ST.isDemo){hint.innerHTML='Select one or more CSV files — you can upload all months at once.';}
     else{hint.innerHTML='<b style="color:#34d399">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' loaded ('+ST.raw.length+' sessions total)</b> — new files will be <b>merged</b> into existing data.';}
   }
+  // Show the clear-data option only when real data exists
+  var cw=document.getElementById('modal-clear-wrap');
+  if(cw)cw.style.display=ST.isDemo?'none':'block';
   document.getElementById('modal').style.display='flex';
 }
 function closeModal(){document.getElementById('modal').style.display='none';}
