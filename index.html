@@ -17,6 +17,9 @@ body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif}
 .pill{padding:4px 12px;border-radius:8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:all .2s;background:#1e293b;color:#94a3b8}
 .pill:hover{background:#334155;color:#e2e8f0}
 .pill.active{background:#4f46e5;color:#fff}
+.hsel{appearance:none;-webkit-appearance:none;background:#1e293b;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:12px;padding:5px 28px 5px 10px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;min-width:140px}
+.hsel:focus{outline:none;border-color:#6366f1}
+.hsel option{background:#1e293b;color:#e2e8f0}
 .card{background:#1e293b;border-radius:12px;border:1px solid #334155;padding:20px}
 .card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #334155}
 table{width:100%;border-collapse:collapse}
@@ -78,7 +81,7 @@ var BUNDLE={
 // ── STATE ──────────────────────────────────────────────────────────
 var ST = {
   raw:null, isDemo:true,
-  month:'All', last30:false, hosts:[],
+  month:'All', last30:false, hostSel:'',
   tab:'overview',
   slotGrain:'2h',
   deepMetric:'gmv',
@@ -134,7 +137,7 @@ function getFilt(){
     var ts=d.map(function(r){return new Date(r.date).getTime();}).filter(function(t){return !isNaN(t);});
     if(ts.length){var mx=Math.max.apply(null,ts);d=d.filter(function(r){return new Date(r.date).getTime()>=mx-30*864e5;});}
   } else if(ST.month!=='All'){d=d.filter(function(r){return r.month===ST.month;});}
-  if(ST.hosts.length) d=d.filter(function(r){return ST.hosts.indexOf(r.host)>=0;});
+  if(ST.hostSel) d=d.filter(function(r){return r.host===ST.hostSel;});
   return d;
 }
 function getKPI(f){
@@ -212,19 +215,35 @@ function render(){
   renderPanel(f,kpi,hd,sd);
 }
 
+function getUniqueHosts(){
+  var seen={},list=[];
+  ST.raw.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!seen[r.host]){seen[r.host]=1;list.push(r.host);}});
+  // sort by known order first, then alphabetically
+  list.sort(function(a,b){var ia=HOSTS.indexOf(a),ib=HOSTS.indexOf(b);if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);});
+  return list;
+}
+
 function renderFilters(){
   var avail=['All'],seen={};
   ST.raw.forEach(function(r){if(r.month&&!seen[r.month]&&MONTHS.indexOf(r.month)>=0){seen[r.month]=1;avail.push(r.month);}});
   var h='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
   h+='<span style="color:#64748b;font-size:12px">Period:</span>';
   h+=pill('Last 30','toggleLast30()',ST.last30);
-  avail.forEach(function(m){h+=pill(m,'setMonth("'+m+'")',!ST.last30&&ST.month===m);});
-  h+='<span style="color:#334155;margin:0 4px">|</span><span style="color:#64748b;font-size:12px">Hosts:</span>';
-  HOSTS.forEach(function(hh){
-    var a=ST.hosts.indexOf(hh)>=0;
-    h+='<button onclick="togHost(\''+hh+'\')" style="padding:4px 8px;border-radius:8px;font-size:12px;cursor:pointer;border:1px solid '+HC[hh]+';background:'+(a?hexRgb(HC[hh],.27):'transparent')+';color:'+(a?HC[hh]:'#94a3b8')+'">'+hh+'</button>';
+  // Fix: use single quotes inside onclick to avoid HTML attribute conflict
+  avail.forEach(function(m){
+    var active=!ST.last30&&ST.month===m;
+    h+='<button onclick="setMonth(\''+m+'\')" class="pill'+(active?' active':'')+'">'+m+'</button>';
   });
-  if(ST.hosts.length) h+=pill('✕ Clear','clearHosts()',false);
+  // Host dropdown
+  h+='<span style="color:#334155;margin:0 4px">|</span>';
+  h+='<span style="color:#64748b;font-size:12px">Host:</span>';
+  var hosts=getUniqueHosts();
+  var opts='<option value="">All Hosts</option>';
+  hosts.forEach(function(hh){
+    var col=HC[hh]?'color:'+HC[hh]+';font-weight:600':'';
+    opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="'+col+'">'+hh+'</option>';
+  });
+  h+='<select class="hsel" onchange="setHostSel(this.value)">'+opts+'</select>';
   h+='</div>';
   document.getElementById('filters').innerHTML=h;
 }
@@ -291,8 +310,8 @@ function tplOverview(){
 
 function tplSlots(sd){
   var grn='<div style="display:flex;gap:8px;margin-bottom:16px">'
-    +pill('2h Buckets','setSlotGrain("2h")',ST.slotGrain==='2h')
-    +pill('4h Buckets','setSlotGrain("4h")',ST.slotGrain==='4h')+'</div>';
+    +pill('2h Buckets',"setSlotGrain('2h')",ST.slotGrain==='2h')
+    +pill('4h Buckets',"setSlotGrain('4h')",ST.slotGrain==='4h')+'</div>';
   var rows=sd.slice().sort(function(a,b){return b.gmv-a.gmv;}).map(function(r){
     return '<tr><td style="color:#cbd5e1;font-weight:500">'+r.slot+'</td><td style="text-align:right;color:#34d399;font-weight:600">'+fR(r.gmv)+'</td><td style="text-align:right;color:#cbd5e1">'+r.sess+'</td><td style="text-align:right;color:#cbd5e1">'+fN(r.vw)+'</td><td style="text-align:right;color:#cbd5e1">'+(r.sess>0?fR(r.gmv/r.sess):'—')+'</td></tr>';
   }).join('');
@@ -304,7 +323,7 @@ function tplSlots(sd){
 
 function tplHosts(hd){
   var mbtns='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"><span style="color:#64748b;font-size:12px;line-height:28px">Y-Axis:</span>'
-    +[['gmv','GMV'],['vw','Viewers'],['atc','ATC'],['cl','Unique Clicks'],['or','Orders']].map(function(p){return pill(p[1],'setDeepMetric("'+p[0]+'")',ST.deepMetric===p[0]);}).join('')+'</div>';
+    +[['gmv','GMV'],['vw','Viewers'],['atc','ATC'],['cl','Unique Clicks'],['or','Orders']].map(function(p){return pill(p[1],"setDeepMetric('"+p[0]+"')",ST.deepMetric===p[0]);}).join('')+'</div>';
   var rows=hd.slice().sort(function(a,b){return b.gmv-a.gmv;}).map(function(h){
     var cc=h.ctr>15?'#34d399':h.ctr>8?'#fbbf24':'#f87171';
     var co=h.ctor>10?'#34d399':h.ctor>6?'#fbbf24':'#f87171';
@@ -318,7 +337,7 @@ function tplHosts(hd){
 
 function tplInsights(){
   var hbtns=HOSTS.map(function(h){var a=ST.insHost===h;return '<button onclick="setInsHost(\''+h+'\')" style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+HC[h]+';background:'+(a?hexRgb(HC[h],.33):'transparent')+';color:'+(a?'#fff':HC[h])+'">'+h+'</button>';}).join('');
-  var sbtns='<div style="display:flex;gap:8px">'+pill('2h','setInsSlot("2h")',ST.insSlot==='2h')+pill('4h','setInsSlot("4h")',ST.insSlot==='4h')+'</div>';
+  var sbtns='<div style="display:flex;gap:8px">'+pill('2h',"setInsSlot('2h')",ST.insSlot==='2h')+pill('4h',"setInsSlot('4h')",ST.insSlot==='4h')+'</div>';
   var ins=getInsights();
   var dot=HC[ST.insHost];
   var lines=ins.map(function(l){return '<div style="display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:12px;background:rgba(51,65,85,.4);border:1px solid rgba(71,85,105,.4);margin-bottom:10px"><div style="width:6px;height:6px;border-radius:50%;background:'+dot+';margin-top:6px;flex-shrink:0"></div><p style="font-size:14px;color:#e2e8f0;line-height:1.6">'+l+'</p></div>';}).join('');
@@ -353,7 +372,7 @@ function tplLeague(hd){
   var sorted=hd.slice().sort(function(a,b){return (b[key]||0)-(a[key]||0);});
   function dv(h){var v=h[key]||0;if(key==='gmv')return fR(v);if(key==='hours'||key==='sess')return Math.round(v)+'';return v.toFixed(1)+'%';}
   var mbtns='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px"><span style="color:#64748b;font-size:12px;line-height:28px">Rank by:</span>'
-    +[['gmv','GMV'],['ctor','CTOR %'],['ctr','CTR %'],['hours','Live Hours'],['sess','Sessions']].map(function(p){return pill(p[1],'setLeague("'+p[0]+'")',ST.league===p[0]);}).join('')+'</div>';
+    +[['gmv','GMV'],['ctor','CTOR %'],['ctr','CTR %'],['hours','Live Hours'],['sess','Sessions']].map(function(p){return pill(p[1],"setLeague('"+p[0]+"')",ST.league===p[0]);}).join('')+'</div>';
   var medals=['🥇','🥈','🥉'];
   function hcard(h,rank,medal){
     return '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:rgba(51,65,85,.4);border:1px solid rgba(71,85,105,.4);margin-bottom:8px">'
@@ -428,8 +447,7 @@ function makeHostChart(hd){
 // ── EVENT HANDLERS ─────────────────────────────────────────────────
 function toggleLast30(){ST.last30=!ST.last30;if(ST.last30)ST.month='All';render();}
 function setMonth(m){ST.month=m;ST.last30=false;render();}
-function togHost(h){var i=ST.hosts.indexOf(h);if(i>=0)ST.hosts.splice(i,1);else ST.hosts.push(h);render();}
-function clearHosts(){ST.hosts=[];render();}
+function setHostSel(h){ST.hostSel=h;render();}
 function setTab(t){ST.tab=t;render();}
 function setSlotGrain(g){ST.slotGrain=g;render();}
 function setDeepMetric(m){ST.deepMetric=m;render();}
