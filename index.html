@@ -106,30 +106,65 @@ function hcol(h){
   return HC_PAL[HC_IDX[h]%HC_PAL.length];
 }
 
-function parseHost(nm){
-  if(!nm) return 'Unknown';
-  var SKIP=['LIVE','SALE','SALES','FLASH','DEAL','NOW','PAYDAY','MEGA','HYGR','LIPSCREEN','BEAUTY','STREAM','READY','GET','WITH','W'];
-  // Normalise: â is mojibake for em-dash (â = 0xE2, often followed by stripped control bytes)
-  // treat it as a ':' separator; then strip non-ASCII and non-alphanumeric except space, colon, dash
+// Words that are never host names — used by extractCandidate
+var HOST_SKIP=['LIVE','SALE','SALES','FLASH','DEAL','NOW','PAYDAY','MEGA','HYGR','BEAUTY',
+  'STREAM','READY','GET','WITH','W','LIPSCREEN','NEW','LAST','CALL','CALLLL',
+  'RAMADAN','IFTAR','RAYA','HUAT','MORNING','MORMING','NIGHT','MALAM','PAGI','PETANG',
+  'MARI','SAMA','JOM','LAH','LA','BUY','TOP','BEST','BIG','MANTAP','MANTAPI',
+  'MURAH','JUAL','BONUS','SPECIAL','ONLY','FREE','OFF'];
+
+// Extract raw name candidate (single word at end of separator or title)
+// NOTE: no frequency validation here — rebuildHostsFromData() does that
+function extractCandidate(nm){
+  if(!nm)return null;
   var c=nm
-    .replace(/â/g,':')
-    .replace(/[^\x00-\x7F]/g,'')
-    .replace(/[^a-zA-Z0-9\s:\-]/g,'')
-    .replace(/\s{2,}/g,' ')
-    .trim();
-  // 1. Name after last : or - or -- (greedy — allows multi-word like "RINA JR")
-  var m=c.match(/(?::|[-]{1,2})\s*([A-Za-z][A-Za-z0-9\s]{0,24})\s*$/i);
-  if(m){
-    var words=m[1].trim().toUpperCase().split(/\s+/).filter(function(w){return w.length>0&&SKIP.indexOf(w)<0;});
-    if(words.length>0){var h=words.join(' ');if(h.length>=2&&h.length<=25)return h;}
+    .replace(/â+/g,':')                      // mojibake em-dash bytes → ':'
+    .replace(/[—–‒]/g,' : ')  // real em/en dashes → separator
+    .replace(/[^\x00-\x7F]/g,'')             // strip remaining non-ASCII (emojis etc.)
+    .replace(/[^a-zA-Z0-9\s:\-]/g,'')        // keep alphanumeric, space, colon, dash
+    .replace(/\s+/g,' ')
+    .trim()
+    .toUpperCase();
+  // Strategy 1: last SINGLE word right after a : or - separator
+  var m=c.match(/(?::|--?)\s*([A-Z][A-Z0-9]*)\s*$/);
+  if(m&&m[1].length>=2&&HOST_SKIP.indexOf(m[1])<0)return m[1];
+  // Strategy 2: last meaningful word in the whole title (no separator case)
+  var words=c.split(/\s+/);
+  for(var i=words.length-1;i>=0;i--){
+    var w=words[i];
+    if(w.length>=2&&HOST_SKIP.indexOf(w)<0&&/^[A-Z][A-Z0-9]*$/.test(w))return w;
   }
-  // 2. Last meaningful word fallback (handles "GET READY W HYGR! HAIDAH" — no separator)
-  var words2=c.split(/\s+/);
-  for(var i=words2.length-1;i>=0;i--){
-    var w=words2[i].toUpperCase();
-    if(w.length>=2&&w.length<=20&&SKIP.indexOf(w)<0&&/^[A-Z][A-Z0-9]*$/.test(w))return w;
-  }
-  return 'Unknown';
+  return null;
+}
+
+// Initial per-row assignment during CSV parse (unvalidated — rebuilt by frequency later)
+function parseHost(nm){return extractCandidate(nm)||'Unknown';}
+
+// TWO-PASS FREQUENCY REBUILD:
+// Pass 1 — extract candidate from every stream name and count appearances
+// Pass 2 — only keep candidates seen 3+ times (confirmed host names)
+// Pass 3 — reassign r.host for every row using confirmed list
+function rebuildHostsFromData(){
+  if(!ST.raw||!ST.raw.length)return;
+  var cands=ST.raw.map(function(r){return extractCandidate(r.streamName);});
+  var freq=Object.create(null);
+  cands.forEach(function(c){if(c)freq[c]=(freq[c]||0)+1;});
+  var MIN=3; // must appear in at least 3 sessions to be a real host
+  var confirmed=Object.keys(freq).filter(function(h){return freq[h]>=MIN;});
+  var ok=Object.create(null);confirmed.forEach(function(h){ok[h]=1;});
+  ST.raw.forEach(function(r,i){
+    var c=cands[i];
+    if(c&&ok[c]){r.host=c;return;}
+    // Fallback: confirmed host found anywhere as substring in stream name
+    var nm=(r.streamName||'').toUpperCase()
+      .replace(/[—–‒]/g,' ')
+      .replace(/â+/g,' ')
+      .replace(/[^\x00-\x7F]/g,'')
+      .replace(/[^A-Z0-9\s]/g,' ');
+    var found=null;
+    for(var j=0;j<confirmed.length;j++){if(nm.indexOf(confirmed[j])>=0){found=confirmed[j];break;}}
+    r.host=found||'Unknown';
+  });
 }
 function pNum(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return isNaN(v)?0:v;return parseFloat(String(v).replace(/[^0-9.-]/g,''))||0;}
 function fR(n){if(!n||isNaN(n))return 'RM0';if(n>=1e6)return 'RM'+(n/1e6).toFixed(1)+'M';if(n>=1e3)return 'RM'+(n/1e3).toFixed(1)+'K';return 'RM'+Math.round(n);}
@@ -626,7 +661,7 @@ function processFiles(files){
       if(totalAdded>0){
         var mo={};ST.raw.forEach(function(r){if(r.month)mo[r.month]=1;});
         if(ST.month!=='All'&&!mo[ST.month])ST.month='All';
-        closeModal();saveToStorage();render();
+        closeModal();rebuildHostsFromData();saveToStorage();render();
       } else {
         alert('No valid data found. Make sure the file is a Shopee Live export CSV with Livestream Name, Start Time, and Sales columns.');
       }
@@ -661,7 +696,7 @@ document.getElementById('root').innerHTML=
 +'</div>';
 
 // Restore previously uploaded data from localStorage; fall back to demo
-if(!loadFromStorage())ST.raw=genMock();
+if(!loadFromStorage()){ST.raw=genMock();}else{rebuildHostsFromData();saveToStorage();}
 render();
 </script>
 </body>
