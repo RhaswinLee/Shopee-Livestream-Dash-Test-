@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/rhaswinlee/**)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(which node *)",
+      "Read(//usr/local/bin/**)"
+    ]
+  }
+}
