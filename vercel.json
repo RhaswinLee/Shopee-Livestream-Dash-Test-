@@ -2,6 +2,7 @@
   "version": 2,
   "routes": [
     { "src": "/", "dest": "/index.html" },
-    { "src": "/dashboard", "dest": "/dashboard.html" }
+    { "src": "/classic", "dest": "/classic.html" },
+    { "src": "/dashboard", "dest": "/classic.html" }
   ]
 }
