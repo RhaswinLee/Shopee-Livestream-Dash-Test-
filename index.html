@@ -104,25 +104,41 @@ function hcol(h){
 
 function parseHost(nm){
   if(!nm) return 'Unknown';
-  // Strip emojis and non-ASCII, keep : — -
-  var c=nm.replace(/[^\x00-\x7F]/g,'').replace(/[^a-zA-Z0-9\s:\-]/g,'').trim();
-  // Extract name AFTER last : or — or -- (e.g. "HYGR SALES : QAQA" → "QAQA")
-  var m=c.match(/(?::|[-]{1,2})\s*([A-Za-z][A-Za-z0-9]{1,})\s*$/i);
+  var SKIP=['LIVE','SALE','SALES','FLASH','DEAL','NOW','PAYDAY','MEGA','HYGR','LIPSCREEN','BEAUTY','STREAM','READY','GET','WITH','W'];
+  // Normalise: â is mojibake for em-dash (â = 0xE2, often followed by stripped control bytes)
+  // treat it as a ':' separator; then strip non-ASCII and non-alphanumeric except space, colon, dash
+  var c=nm
+    .replace(/â/g,':')
+    .replace(/[^\x00-\x7F]/g,'')
+    .replace(/[^a-zA-Z0-9\s:\-]/g,'')
+    .replace(/\s{2,}/g,' ')
+    .trim();
+  // 1. Name after last : or - or -- (greedy — allows multi-word like "RINA JR")
+  var m=c.match(/(?::|[-]{1,2})\s*([A-Za-z][A-Za-z0-9\s]{0,24})\s*$/i);
   if(m){
-    var h=m[1].toUpperCase().trim();
-    // Skip generic words that aren't host names
-    var SKIP=['LIVE','SALE','SALES','FLASH','DEAL','NOW','PAYDAY','MEGA','HYGR','LIPSCREEN','BEAUTY','STREAM'];
-    if(SKIP.indexOf(h)<0&&h.length>=2&&h.length<=20) return h;
+    var words=m[1].trim().toUpperCase().split(/\s+/).filter(function(w){return w.length>0&&SKIP.indexOf(w)<0;});
+    if(words.length>0){var h=words.join(' ');if(h.length>=2&&h.length<=25)return h;}
   }
-  // Fallback: check known hosts anywhere in string
-  var upper=nm.toUpperCase();
-  for(var i=0;i<HOSTS.length;i++) if(upper.indexOf(HOSTS[i])>=0) return HOSTS[i];
+  // 2. Last meaningful word fallback (handles "GET READY W HYGR! HAIDAH" — no separator)
+  var words2=c.split(/\s+/);
+  for(var i=words2.length-1;i>=0;i--){
+    var w=words2[i].toUpperCase();
+    if(w.length>=2&&w.length<=20&&SKIP.indexOf(w)<0&&/^[A-Z][A-Z0-9]*$/.test(w))return w;
+  }
   return 'Unknown';
 }
 function pNum(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return isNaN(v)?0:v;return parseFloat(String(v).replace(/[^0-9.-]/g,''))||0;}
 function fR(n){if(!n||isNaN(n))return 'RM0';if(n>=1e6)return 'RM'+(n/1e6).toFixed(1)+'M';if(n>=1e3)return 'RM'+(n/1e3).toFixed(1)+'K';return 'RM'+Math.round(n);}
 function fN(n){if(!n||isNaN(n))return '0';if(n>=1e3)return (n/1e3).toFixed(1)+'K';return String(Math.round(n));}
-function mKey(ds){if(!ds)return '';var d=new Date(ds);if(isNaN(d.getTime()))return '';var m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return m[d.getMonth()]+' '+d.getFullYear();}
+function mKey(ds){
+  if(!ds)return '';
+  // Fast path: YYYY-MM-DD (timezone-safe, no Date object needed)
+  var m=ds.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];var mo=parseInt(m[2])-1;return(mo>=0&&mo<12)?months[mo]+' '+m[1]:'';}
+  var d=new Date(ds);if(isNaN(d.getTime()))return '';
+  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getUTCMonth()]+' '+d.getUTCFullYear();
+}
 function s2h(h){return S2H[Math.floor(h/2)%12];}
 function s4h(h){return S4H[Math.floor(h/4)%6];}
 function p2(n){return n<10?'0'+n:''+n;}
@@ -495,12 +511,49 @@ function handleFile(e){var f=e.target.files[0];if(f)processCSV(f);}
 function processCSV(f){
   Papa.parse(f,{header:true,skipEmptyLines:true,complete:function(res){
     var keys=res.data[0]?Object.keys(res.data[0]):[];
+    // Strip UTF-8 BOM from first key if PapaParse didn't remove it
+    if(keys.length&&keys[0].charCodeAt(0)===0xFEFF)keys[0]=keys[0].slice(1);
     function fc(als){return keys.find(function(k){return als.some(function(a){return k.toLowerCase().indexOf(a)>=0;});})||null;}
-    var dc=fc(['date','tarikh','period']),nc=fc(['name','title','livestream','stream','nama']),tc=fc(['start time','start','waktu']),drc=fc(['duration','dur','tempoh']),vc=fc(['viewer','penonton','views']),ac=fc(['atc','add to cart','cart']),cc=fc(['unique click','click','klik']),oc=fc(['order','confirmed','pesanan']),gc=fc(['gmv','sales','revenue','rm','amount']);
+
+    // Livestream name
+    var nc=fc(['livestream name','name','title','stream','nama']);
+    // Start time — per-session datetime (DD-MM-YYYY HH:MM or YYYY-MM-DD HH:MM)
+    var stc=fc(['start time','start waktu'])||fc(['date','tarikh']);
+    // Duration — prefer columns NOT containing 'avg' (avoids "Avg. Viewing Duration")
+    var drc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('duration')>=0&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
+    // Viewers — prefer plain "Viewers" over "Engaged Viewers"
+    var vc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('viewer')>=0&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
+    // ATC
+    var ac=keys.find(function(k){return k.toLowerCase()==='atc';})||fc(['add to cart','cart','atc']);
+    // Unique clicks (not in Shopee export — use Engaged Viewers as proxy for engagement rate)
+    var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
+    // Orders — prefer confirmed, exclude "items sold"
+    var oc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0;})||fc(['order','pesanan']);
+    // GMV/Sales — prefer Sales(Confirmed Order)
+    var gc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0;})||fc(['gmv','revenue','sales','amount']);
+
     var rows=res.data.map(function(r){
-      var ds=dc?r[dc]:'',nm=nc?r[nc]:'',ts=tc?r[tc]:'12:00',sh=parseInt((ts||'12').split(':')[0])||12;
-      return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),startHour:sh,startTime:ts||'12:00',duration:pNum(drc?r[drc]:0),viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
+      // Parse date + hour from Start Time "DD-MM-YYYY HH:MM" or "YYYY-MM-DD HH:MM"
+      var rawDt=stc?r[stc]:'';
+      var ds='',sh=12,startStr='12:00';
+      var dmDD=rawDt.match(/^(\d{2})-(\d{2})-(\d{4})/);
+      var dmYY=rawDt.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(dmDD){ds=dmDD[3]+'-'+dmDD[2]+'-'+dmDD[1];}
+      else if(dmYY){ds=rawDt.substring(0,10);}
+      else{ds=rawDt;}
+      var tm=rawDt.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if(tm){sh=parseInt(tm[1]);startStr=('0'+tm[1]).slice(-2)+':'+tm[2];}
+
+      // Parse duration HH:MM:SS → minutes
+      var durRaw=drc?r[drc]:'0',durMins=0;
+      var dm3=String(durRaw).match(/(\d+):(\d+):(\d+)/);
+      if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
+      else{var dm2=String(durRaw).match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
+
+      var nm=nc?r[nc]:'';
+      return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
     }).filter(function(r){return r.gmv>0||r.viewers>0;});
+
     rows.forEach(function(r){r.ctr=r.viewers>0?r.uniqueClicks/r.viewers*100:0;r.ctor=r.uniqueClicks>0?r.orders/r.uniqueClicks*100:0;});
     if(rows.length){ST.raw=rows;ST.isDemo=false;closeModal();render();}
     else alert('No valid data rows found. Please check column names.');
