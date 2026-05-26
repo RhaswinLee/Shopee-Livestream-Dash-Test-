@@ -44,10 +44,10 @@ tr:hover td{background:rgba(51,65,85,.3)}
       ondragleave="this.style.borderColor='#475569';this.style.background=''"
       ondrop="handleDrop(event)"
       onclick="document.getElementById('filein').click()">
-      <input id="filein" type="file" accept=".csv" style="display:none" onchange="handleFile(event)"/>
+      <input id="filein" type="file" accept=".csv" multiple style="display:none" onchange="handleFile(event)"/>
       <div style="color:#818cf8;font-size:32px;margin-bottom:12px">⬆</div>
-      <p style="color:#cbd5e1;font-weight:500">Drag &amp; drop CSV here or click to browse</p>
-      <p style="color:#64748b;font-size:13px;margin-top:4px">Supports Shopee Live export format</p>
+      <p style="color:#cbd5e1;font-weight:500">Drag &amp; drop CSV files here or click to browse</p>
+      <p style="color:#64748b;font-size:13px;margin-top:4px">Select multiple months at once — all data will be merged</p>
     </div>
     <div id="modal-hint" style="font-size:12px;color:#64748b;margin-top:12px;min-height:16px">Upload your first CSV file to replace demo data.</div>
     <div style="background:rgba(51,65,85,.5);border-radius:8px;padding:12px;margin-top:8px;font-size:12px;color:#64748b">
@@ -525,89 +525,111 @@ function setInsHost(h){ST.insHost=h;render();}
 function setInsSlot(s){ST.insSlot=s;render();}
 function setSKU(s){ST.sku=s;render();}
 function setLeague(m){ST.league=m;render();}
-function clearData(){ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';render();}
+function clearData(){
+  ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';
+  try{localStorage.removeItem('shopee_live');}catch(e){}
+  render();
+}
+
+// ── STORAGE ────────────────────────────────────────────────────────
+function saveToStorage(){
+  try{localStorage.setItem('shopee_live',JSON.stringify({v:1,raw:ST.raw,files:ST.filesLoaded}));}
+  catch(e){console.warn('localStorage save failed (data may be too large):',e);}
+}
+function loadFromStorage(){
+  try{
+    var d=localStorage.getItem('shopee_live');
+    if(!d)return false;
+    var p=JSON.parse(d);
+    if(p&&p.raw&&p.raw.length>0){ST.raw=p.raw;ST.filesLoaded=p.files||0;ST.isDemo=false;return true;}
+  }catch(e){}
+  return false;
+}
 
 // ── UPLOAD ─────────────────────────────────────────────────────────
 function openModal(){
-  // Update modal hint based on current state
   var hint=document.getElementById('modal-hint');
   if(hint){
-    if(ST.isDemo){hint.textContent='Upload your first CSV file to replace demo data.';}
-    else{hint.innerHTML='<b style="color:#34d399">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' already loaded ('+ST.raw.length+' sessions)</b> — uploading another will <b>add</b> to the existing data.';}
+    if(ST.isDemo){hint.innerHTML='Select one or more CSV files — you can upload all months at once.';}
+    else{hint.innerHTML='<b style="color:#34d399">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' loaded ('+ST.raw.length+' sessions total)</b> — new files will be <b>merged</b> into existing data.';}
   }
   document.getElementById('modal').style.display='flex';
 }
 function closeModal(){document.getElementById('modal').style.display='none';}
-function handleDrop(e){e.preventDefault();e.currentTarget.style.borderColor='';e.currentTarget.style.background='';var f=e.dataTransfer.files[0];if(f)processCSV(f);}
-function handleFile(e){var f=e.target.files[0];if(f)processCSV(f);}
-function processCSV(f){
+function handleDrop(e){
+  e.preventDefault();e.currentTarget.style.borderColor='';e.currentTarget.style.background='';
+  if(e.dataTransfer.files&&e.dataTransfer.files.length)processFiles(e.dataTransfer.files);
+}
+function handleFile(e){
+  var files=e.target.files;
+  e.target.value=''; // reset so same file can trigger onchange again
+  if(files&&files.length)processFiles(files);
+}
+
+// Parse one CSV file and merge its rows into ST.raw; call done(rowCount) when finished
+function parseOneCSV(f,done){
   Papa.parse(f,{header:true,skipEmptyLines:true,complete:function(res){
     var keys=res.data[0]?Object.keys(res.data[0]):[];
-    // Strip UTF-8 BOM from first key if PapaParse didn't remove it
     if(keys.length&&keys[0].charCodeAt(0)===0xFEFF)keys[0]=keys[0].slice(1);
     function fc(als){return keys.find(function(k){return als.some(function(a){return k.toLowerCase().indexOf(a)>=0;});})||null;}
-
-    // Livestream name
     var nc=fc(['livestream name','name','title','stream','nama']);
-    // Start time — per-session datetime (DD-MM-YYYY HH:MM or YYYY-MM-DD HH:MM)
     var stc=fc(['start time','start waktu'])||fc(['date','tarikh']);
-    // Duration — prefer columns NOT containing 'avg' (avoids "Avg. Viewing Duration")
     var drc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('duration')>=0&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
-    // Viewers — prefer plain "Viewers" over "Engaged Viewers"
     var vc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('viewer')>=0&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
-    // ATC
     var ac=keys.find(function(k){return k.toLowerCase()==='atc';})||fc(['add to cart','cart','atc']);
-    // Unique clicks (not in Shopee export — use Engaged Viewers as proxy for engagement rate)
     var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
-    // Orders — prefer confirmed, exclude "items sold"
     var oc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0;})||fc(['order','pesanan']);
-    // GMV/Sales — prefer Sales(Confirmed Order)
     var gc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0;})||fc(['gmv','revenue','sales','amount']);
-
     var rows=res.data.map(function(r){
-      // Parse date + hour from Start Time "DD-MM-YYYY HH:MM" or "YYYY-MM-DD HH:MM"
       var rawDt=stc?r[stc]:'';
       var ds='',sh=12,startStr='12:00';
       var dmDD=rawDt.match(/^(\d{2})-(\d{2})-(\d{4})/);
       var dmYY=rawDt.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if(dmDD){ds=dmDD[3]+'-'+dmDD[2]+'-'+dmDD[1];}
-      else if(dmYY){ds=rawDt.substring(0,10);}
-      else{ds=rawDt;}
+      if(dmDD){ds=dmDD[3]+'-'+dmDD[2]+'-'+dmDD[1];}else if(dmYY){ds=rawDt.substring(0,10);}else{ds=rawDt;}
       var tm=rawDt.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
       if(tm){sh=parseInt(tm[1]);startStr=('0'+tm[1]).slice(-2)+':'+tm[2];}
-
-      // Parse duration HH:MM:SS → minutes
       var durRaw=drc?r[drc]:'0',durMins=0;
       var dm3=String(durRaw).match(/(\d+):(\d+):(\d+)/);
       if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
       else{var dm2=String(durRaw).match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
-
       var nm=nc?r[nc]:'';
       return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
     }).filter(function(r){return r.gmv>0||r.viewers>0;});
-
     rows.forEach(function(r){r.ctr=r.viewers>0?r.uniqueClicks/r.viewers*100:0;r.ctor=r.uniqueClicks>0?r.orders/r.uniqueClicks*100:0;});
     if(rows.length){
       if(ST.isDemo){
-        // First upload: replace demo data
-        ST.raw=rows;
-        ST.filesLoaded=1;
+        ST.raw=rows;ST.filesLoaded=1;
       } else {
-        // Subsequent uploads: merge — deduplicate by date+streamName+startTime
         var keyOf=function(r){return r.date+'|'+r.streamName+'|'+r.startTime;};
-        var existing=Object.create(null);
-        ST.raw.forEach(function(r){existing[keyOf(r)]=1;});
-        var added=rows.filter(function(r){return !existing[keyOf(r)];});
+        var ex=Object.create(null);
+        ST.raw.forEach(function(r){ex[keyOf(r)]=1;});
+        var added=rows.filter(function(r){return !ex[keyOf(r)];});
         ST.raw=ST.raw.concat(added);
         ST.filesLoaded=(ST.filesLoaded||0)+1;
       }
       ST.isDemo=false;
-      // If current month filter no longer exists in new data, reset to 'All'
-      var mo={};ST.raw.forEach(function(r){if(r.month)mo[r.month]=1;});
-      if(ST.month!=='All'&&!mo[ST.month])ST.month='All';
-      closeModal();render();
-    } else alert('No valid data rows found. Check column names match expected format.');
+    }
+    if(done)done(rows.length);
   }});
+}
+
+// Process a FileList sequentially; close modal + persist + render when all done
+function processFiles(files){
+  var arr=Array.prototype.slice.call(files),idx=0,totalAdded=0;
+  function next(){
+    if(idx>=arr.length){
+      if(totalAdded>0){
+        var mo={};ST.raw.forEach(function(r){if(r.month)mo[r.month]=1;});
+        if(ST.month!=='All'&&!mo[ST.month])ST.month='All';
+        closeModal();saveToStorage();render();
+      } else {
+        alert('No valid data found. Make sure the file is a Shopee Live export CSV with Livestream Name, Start Time, and Sales columns.');
+      }
+      return;
+    }
+    parseOneCSV(arr[idx++],function(n){totalAdded+=n;next();});
+  }
+  next();
 }
 
 // ── INIT ───────────────────────────────────────────────────────────
@@ -633,7 +655,8 @@ document.getElementById('root').innerHTML=
 +'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Shopee Live Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
 
-ST.raw=genMock();
+// Restore previously uploaded data from localStorage; fall back to demo
+if(!loadFromStorage())ST.raw=genMock();
 render();
 </script>
 </body>
