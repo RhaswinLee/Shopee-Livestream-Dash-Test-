@@ -92,12 +92,31 @@ var ST = {
 var CHS = {}; // chart instances
 
 // ── UTILITIES ──────────────────────────────────────────────────────
+// Dynamic colour palette for hosts beyond the preset 6
+var HC_PAL=['#f472b6','#60a5fa','#34d399','#a78bfa','#fb923c','#fbbf24',
+            '#38bdf8','#f97316','#4ade80','#c084fc','#e879f9','#a3e635'];
+var HC_IDX={};
+function hcol(h){
+  if(HC[h])return HC[h];
+  if(HC_IDX[h]===undefined){var n=Object.keys(HC_IDX).length;HC_IDX[h]=n;}
+  return HC_PAL[HC_IDX[h]%HC_PAL.length];
+}
+
 function parseHost(nm){
   if(!nm) return 'Unknown';
+  // Strip emojis and non-ASCII, keep : — -
   var c=nm.replace(/[^\x00-\x7F]/g,'').replace(/[^a-zA-Z0-9\s:\-]/g,'').trim();
-  var m=c.match(/(?::|[-]{1,2})\s*([A-Za-z]{2,})\s*$/i);
-  if(m){var h=m[1].toUpperCase();if(HOSTS.indexOf(h)>=0)return h;}
-  for(var i=0;i<HOSTS.length;i++) if(nm.toUpperCase().indexOf(HOSTS[i])>=0) return HOSTS[i];
+  // Extract name AFTER last : or — or -- (e.g. "HYGR SALES : QAQA" → "QAQA")
+  var m=c.match(/(?::|[-]{1,2})\s*([A-Za-z][A-Za-z0-9]{1,})\s*$/i);
+  if(m){
+    var h=m[1].toUpperCase().trim();
+    // Skip generic words that aren't host names
+    var SKIP=['LIVE','SALE','SALES','FLASH','DEAL','NOW','PAYDAY','MEGA','HYGR','LIPSCREEN','BEAUTY','STREAM'];
+    if(SKIP.indexOf(h)<0&&h.length>=2&&h.length<=20) return h;
+  }
+  // Fallback: check known hosts anywhere in string
+  var upper=nm.toUpperCase();
+  for(var i=0;i<HOSTS.length;i++) if(upper.indexOf(HOSTS[i])>=0) return HOSTS[i];
   return 'Unknown';
 }
 function pNum(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return isNaN(v)?0:v;return parseFloat(String(v).replace(/[^0-9.-]/g,''))||0;}
@@ -161,15 +180,21 @@ function getHosts(f){
     if(!mp[r.host])mp[r.host]={host:r.host,gmv:0,vw:0,atc:0,cl:0,or:0,sess:0,dur:0};
     var h=mp[r.host];h.gmv+=r.gmv;h.vw+=r.viewers;h.atc+=r.atc;h.cl+=r.uniqueClicks;h.or+=r.orders;h.sess++;h.dur+=r.duration||0;
   });
-  return HOSTS.map(function(h){
-    var d=mp[h]||{host:h,gmv:0,vw:0,atc:0,cl:0,or:0,sess:0,dur:0};
+  // Return ALL hosts present in filtered data (not just preset 6)
+  var alist=Object.keys(mp);
+  alist.sort(function(a,b){var ia=HOSTS.indexOf(a),ib=HOSTS.indexOf(b);if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);});
+  return alist.map(function(h){
+    var d=mp[h];
     return Object.assign({},d,{ctr:d.vw>0?d.cl/d.vw*100:0,ctor:d.cl>0?d.or/d.cl*100:0,avgGMV:d.sess>0?d.gmv/d.sess:0,hours:d.dur/60});
   });
 }
 function getSlots(f){
   var fn=ST.slotGrain==='2h'?s2h:s4h,ord=ST.slotGrain==='2h'?S2H:S4H,mp={};
-  ord.forEach(function(sl){var o={slot:sl,gmv:0,vw:0,sess:0};HOSTS.forEach(function(h){o[h]=0;});mp[sl]=o;});
-  f.forEach(function(r){var sl=fn(r.startHour);if(!mp[sl])return;mp[sl].gmv+=r.gmv;mp[sl].vw+=r.viewers;mp[sl].sess++;if(r.host&&mp[sl][r.host]!==undefined)mp[sl][r.host]+=r.gmv;});
+  // Collect all unique hosts in this filtered set for slot stacking
+  var dynHosts=[],dh={};
+  f.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!dh[r.host]){dh[r.host]=1;dynHosts.push(r.host);}});
+  ord.forEach(function(sl){var o={slot:sl,gmv:0,vw:0,sess:0};dynHosts.forEach(function(h){o[h]=0;});mp[sl]=o;});
+  f.forEach(function(r){var sl=fn(r.startHour);if(!mp[sl])return;mp[sl].gmv+=r.gmv;mp[sl].vw+=r.viewers;mp[sl].sess++;if(r.host&&r.host!=='Unknown'){if(mp[sl][r.host]===undefined)mp[sl][r.host]=0;mp[sl][r.host]+=r.gmv;}});
   return ord.map(function(sl){return mp[sl];});
 }
 function getHotspot(){
@@ -240,7 +265,7 @@ function renderFilters(){
   var hosts=getUniqueHosts();
   var opts='<option value="">All Hosts</option>';
   hosts.forEach(function(hh){
-    var col=HC[hh]?'color:'+HC[hh]+';font-weight:600':'';
+    var col='color:'+hcol(hh)+';font-weight:600';
     opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="'+col+'">'+hh+'</option>';
   });
   h+='<select class="hsel" onchange="setHostSel(this.value)">'+opts+'</select>';
@@ -327,7 +352,7 @@ function tplHosts(hd){
   var rows=hd.slice().sort(function(a,b){return b.gmv-a.gmv;}).map(function(h){
     var cc=h.ctr>15?'#34d399':h.ctr>8?'#fbbf24':'#f87171';
     var co=h.ctor>10?'#34d399':h.ctor>6?'#fbbf24':'#f87171';
-    return '<tr><td style="font-weight:700;color:'+HC[h.host]+'">'+h.host+'</td><td style="text-align:right;color:#34d399;font-weight:600">'+fR(h.gmv)+'</td><td style="text-align:right;color:#cbd5e1">'+h.sess+'</td><td style="text-align:right;color:#cbd5e1">'+fR(h.avgGMV)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.vw)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.atc)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.cl)+'</td><td style="text-align:right;color:'+cc+'">'+h.ctr.toFixed(1)+'%</td><td style="text-align:right;color:'+co+'">'+h.ctor.toFixed(1)+'%</td><td style="text-align:right;color:#cbd5e1">'+h.hours.toFixed(0)+'h</td></tr>';
+    return '<tr><td style="font-weight:700;color:'+hcol(h.host)+'">'+h.host+'</td><td style="text-align:right;color:#34d399;font-weight:600">'+fR(h.gmv)+'</td><td style="text-align:right;color:#cbd5e1">'+h.sess+'</td><td style="text-align:right;color:#cbd5e1">'+fR(h.avgGMV)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.vw)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.atc)+'</td><td style="text-align:right;color:#cbd5e1">'+fN(h.cl)+'</td><td style="text-align:right;color:'+cc+'">'+h.ctr.toFixed(1)+'%</td><td style="text-align:right;color:'+co+'">'+h.ctor.toFixed(1)+'%</td><td style="text-align:right;color:#cbd5e1">'+h.hours.toFixed(0)+'h</td></tr>';
   }).join('');
   var tbl='<div style="overflow-x:auto"><table><thead><tr><th style="text-align:left">Host</th><th style="text-align:right">GMV</th><th style="text-align:right">Sess</th><th style="text-align:right">Avg GMV</th><th style="text-align:right">Viewers</th><th style="text-align:right">ATC</th><th style="text-align:right">Clicks</th><th style="text-align:right">CTR</th><th style="text-align:right">CTOR</th><th style="text-align:right">Hours</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   return '<div style="display:flex;flex-direction:column;gap:16px">'
@@ -336,10 +361,13 @@ function tplHosts(hd){
 }
 
 function tplInsights(){
-  var hbtns=HOSTS.map(function(h){var a=ST.insHost===h;return '<button onclick="setInsHost(\''+h+'\')" style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+HC[h]+';background:'+(a?hexRgb(HC[h],.33):'transparent')+';color:'+(a?'#fff':HC[h])+'">'+h+'</button>';}).join('');
+  var uhosts=getUniqueHosts();
+  // Ensure insHost is valid; reset to first available host if not
+  if(uhosts.length&&uhosts.indexOf(ST.insHost)<0)ST.insHost=uhosts[0];
+  var hbtns=uhosts.map(function(h){var a=ST.insHost===h;var c=hcol(h);return '<button onclick="setInsHost(\''+h+'\')" style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+c+';background:'+(a?hexRgb(c,.33):'transparent')+';color:'+(a?'#fff':c)+'">'+h+'</button>';}).join('');
   var sbtns='<div style="display:flex;gap:8px">'+pill('2h',"setInsSlot('2h')",ST.insSlot==='2h')+pill('4h',"setInsSlot('4h')",ST.insSlot==='4h')+'</div>';
   var ins=getInsights();
-  var dot=HC[ST.insHost];
+  var dot=hcol(ST.insHost);
   var lines=ins.map(function(l){return '<div style="display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:12px;background:rgba(51,65,85,.4);border:1px solid rgba(71,85,105,.4);margin-bottom:10px"><div style="width:6px;height:6px;border-radius:50%;background:'+dot+';margin-top:6px;flex-shrink:0"></div><p style="font-size:14px;color:#e2e8f0;line-height:1.6">'+l+'</p></div>';}).join('');
   return '<div class="card"><div class="card-title">Hourly Conversion Velocity Insights</div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:24px;margin-bottom:20px">'
@@ -377,7 +405,7 @@ function tplLeague(hd){
   function hcard(h,rank,medal){
     return '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:rgba(51,65,85,.4);border:1px solid rgba(71,85,105,.4);margin-bottom:8px">'
       +(medal?'<span style="font-size:20px;width:28px;text-align:center">'+medal+'</span>':'<div style="width:28px;height:28px;border-radius:50%;background:rgba(239,68,68,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#f87171;flex-shrink:0">#'+rank+'</div>')
-      +'<div style="flex:1;min-width:0"><p style="font-weight:700;font-size:14px;color:'+HC[h.host]+'">'+h.host+'</p><p style="font-size:12px;color:#94a3b8">'+h.sess+' sessions · '+h.hours.toFixed(0)+'h live</p></div>'
+      +'<div style="flex:1;min-width:0"><p style="font-weight:700;font-size:14px;color:'+hcol(h.host)+'">'+h.host+'</p><p style="font-size:12px;color:#94a3b8">'+h.sess+' sessions · '+h.hours.toFixed(0)+'h live</p></div>'
       +'<div style="text-align:right"><p style="font-size:14px;font-weight:700;color:#fff">'+dv(h)+'</p><p style="font-size:11px;color:#64748b">'+key.toUpperCase()+'</p></div>'
       +'</div>';
   }
@@ -388,8 +416,8 @@ function tplLeague(hd){
     var v=h[key]||0,pct=maxV>0?Math.round(v/maxV*100):0;
     return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
       +'<span style="font-size:12px;color:#64748b;width:16px;text-align:right">'+(i+1)+'</span>'
-      +'<span style="font-size:14px;font-weight:700;width:52px;color:'+HC[h.host]+'">'+h.host+'</span>'
-      +'<div style="flex:1;background:#334155;border-radius:6px;height:12px"><div style="height:12px;border-radius:6px;background:'+HC[h.host]+';width:'+pct+'%;transition:width .4s"></div></div>'
+      +'<span style="font-size:14px;font-weight:700;width:52px;color:'+hcol(h.host)+'">'+h.host+'</span>'
+      +'<div style="flex:1;background:#334155;border-radius:6px;height:12px"><div style="height:12px;border-radius:6px;background:'+hcol(h.host)+';width:'+pct+'%;transition:width .4s"></div></div>'
       +'<span style="font-size:12px;font-weight:500;color:#e2e8f0;width:72px;text-align:right">'+dv(h)+'</span></div>';
   }).join('');
   return '<div style="display:flex;flex-direction:column;gap:16px">'
@@ -429,19 +457,22 @@ function makeOverviewCharts(hd){
   if(c2)CHS.sess=new Chart(c2,{type:'bar',data:{labels:mom.map(function(d){return d.mo;}),datasets:[{type:'bar',label:'Sessions',data:mom.map(function(d){return d.sess;}),backgroundColor:'rgba(52,211,153,.8)',borderRadius:4,yAxisID:'y'},{type:'line',label:'Live Hrs',data:mom.map(function(d){return d.hrs;}),borderColor:'#fb923c',borderWidth:2,pointRadius:4,pointBackgroundColor:'#fb923c',tension:.3,yAxisID:'y2'}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{position:'left'}),y2:Object.assign({},AY,{position:'right',grid:{drawOnChartArea:false}})},plugins:{legend:{labels:{color:'#94a3b8',font:{size:11},boxWidth:12}}}}});
   var c3=document.getElementById('c-hdist');
   var sh=hd.slice().sort(function(a,b){return b.gmv-a.gmv;});
-  if(c3)CHS.hdist=new Chart(c3,{type:'bar',data:{labels:sh.map(function(h){return h.host;}),datasets:[{label:'GMV',data:sh.map(function(h){return h.gmv;}),backgroundColor:sh.map(function(h){return HC[h.host]||'#6366f1';}),borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:Object.assign({},AX,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return fR(v);}}}),y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:11}}})},plugins:{legend:{display:false}}}});
+  if(c3)CHS.hdist=new Chart(c3,{type:'bar',data:{labels:sh.map(function(h){return h.host;}),datasets:[{label:'GMV',data:sh.map(function(h){return h.gmv;}),backgroundColor:sh.map(function(h){return hcol(h.host);}),borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:Object.assign({},AX,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return fR(v);}}}),y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:11}}})},plugins:{legend:{display:false}}}});
 }
 function makeSlotChart(sd){
   var c=document.getElementById('c-slot');
   if(!c)return;
-  CHS.slot=new Chart(c,{type:'bar',data:{labels:sd.map(function(d){return d.slot;}),datasets:HOSTS.map(function(h){return{label:h,data:sd.map(function(d){return d[h]||0;}),backgroundColor:HC[h],stack:'s'};})},options:{responsive:true,maintainAspectRatio:false,scales:{x:Object.assign({},AX,{stacked:true,ticks:{color:'#94a3b8',font:{size:9},maxRotation:35}}),y:Object.assign({},AY,{stacked:true,ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return fR(v);}}})},plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',font:{size:11},boxWidth:12}}}}});
+  // Derive dynamic host list from slot data (all host keys except reserved names)
+  var slotKeys={};sd.forEach(function(sl){Object.keys(sl).forEach(function(k){if(k!=='slot'&&k!=='gmv'&&k!=='vw'&&k!=='sess')slotKeys[k]=1;});});
+  var slotHosts=Object.keys(slotKeys);slotHosts.sort(function(a,b){var ia=HOSTS.indexOf(a),ib=HOSTS.indexOf(b);if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);});
+  CHS.slot=new Chart(c,{type:'bar',data:{labels:sd.map(function(d){return d.slot;}),datasets:slotHosts.map(function(h){return{label:h,data:sd.map(function(d){return d[h]||0;}),backgroundColor:hcol(h),stack:'s'};})},options:{responsive:true,maintainAspectRatio:false,scales:{x:Object.assign({},AX,{stacked:true,ticks:{color:'#94a3b8',font:{size:9},maxRotation:35}}),y:Object.assign({},AY,{stacked:true,ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return fR(v);}}})},plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',font:{size:11},boxWidth:12}}}}});
 }
 function makeHostChart(hd){
   var c=document.getElementById('c-deep');
   if(!c)return;
   var key=ST.deepMetric;
   var sorted=hd.slice().sort(function(a,b){return (b[key]||0)-(a[key]||0);});
-  CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return HC[h.host]||'#6366f1';}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return key==='gmv'?fR(v):fN(v);}}})},plugins:{legend:{display:false}}}});
+  CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return hcol(h.host);}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return key==='gmv'?fR(v):fN(v);}}})},plugins:{legend:{display:false}}}});
 }
 
 // ── EVENT HANDLERS ─────────────────────────────────────────────────
