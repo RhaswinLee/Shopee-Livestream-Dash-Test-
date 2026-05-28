@@ -90,6 +90,7 @@ var SN = {
   LISA: ['HYGR BEAUTY : LISA💕','HYGR LIVE : LISA💕','SALES LIVE : LISA'],
   SITI: ['RAMADAN SALES : SITI✨','HYGR SALES : SITI✨','PAYDAY : SITI🎉'],
 };
+var S1H=['12AM-1AM','1AM-2AM','2AM-3AM','3AM-4AM','4AM-5AM','5AM-6AM','6AM-7AM','7AM-8AM','8AM-9AM','9AM-10AM','10AM-11AM','11AM-12PM','12PM-1PM','1PM-2PM','2PM-3PM','3PM-4PM','4PM-5PM','5PM-6PM','6PM-7PM','7PM-8PM','8PM-9PM','9PM-10PM','10PM-11PM','11PM-12AM'];
 var S2H=['12AM-2AM','2AM-4AM','4AM-6AM','6AM-8AM','8AM-10AM','10AM-12PM','12PM-2PM','2PM-4PM','4PM-6PM','6PM-8PM','8PM-10PM','10PM-12AM'];
 var S4H=['12AM-4AM','4AM-8AM','8AM-12PM','12PM-4PM','4PM-8PM','8PM-12AM'];
 var BUNDLE={
@@ -110,7 +111,8 @@ var ST = {
   deepMetric:'gmv',
   insHost:'QAQA', insSlot:'2h',
   sku:'Lipscreen',
-  league:'gmv', leaguePage:0
+  league:'gmv', leaguePage:0,
+  analysisSlotGrain:'4h', analysisCustFrom:18, analysisCustTo:22
 };
 var CHS = {}; // chart instances
 var PP={open:false,mode:'',calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),s0:null,s1:null};
@@ -198,6 +200,7 @@ function mKey(ds){
   var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return months[d.getUTCMonth()]+' '+d.getUTCFullYear();
 }
+function s1h(h){return S1H[h%24];}
 function s2h(h){return S2H[Math.floor(h/2)%12];}
 function s4h(h){return S4H[Math.floor(h/4)%6];}
 function p2(n){return n<10?'0'+n:''+n;}
@@ -585,10 +588,27 @@ function tplAnalysis(f,hd){
   var rc_ctr=bad.filter(function(r){return r.viewers>=aV*0.5&&r.ctr<aCTR*0.6;}).length;
   var rc_ctor=bad.filter(function(r){return r.viewers>=aV*0.5&&r.ctr>=aCTR*0.5&&r.ctor<aCTOR*0.6;}).length;
   var rc_short=bad.filter(function(r){return (r.duration||0)<45;}).length;
-  // Slot breakdown (4h)
+  // Slot breakdown — dynamic grain
+  var grain=ST.analysisSlotGrain||'4h';
+  var slotFn,slotOrd;
+  if(grain==='1h'){slotFn=s1h;slotOrd=S1H;}
+  else if(grain==='2h'){slotFn=s2h;slotOrd=S2H;}
+  else if(grain==='4h'){slotFn=s4h;slotOrd=S4H;}
+  else{ // custom: 1h resolution within user-defined range
+    var cf=ST.analysisCustFrom||0,ct=ST.analysisCustTo||23;
+    if(ct<cf)ct=cf;
+    slotOrd=[];for(var hi=cf;hi<=ct;hi++)slotOrd.push(S1H[hi%24]);
+    slotFn=s1h;
+  }
   var sm={};
-  f.forEach(function(r){var sl=s4h(r.startHour||12);if(!sm[sl])sm[sl]={g:0,v:0,cl:0,or:0,s:0};var x=sm[sl];x.g+=r.gmv;x.v+=r.viewers;x.cl+=r.uniqueClicks;x.or+=r.orders;x.s++;});
-  var sa=S4H.map(function(sl){var x=sm[sl]||{g:0,v:0,cl:0,or:0,s:0};return {slot:sl,sess:x.s,gps:x.s?x.g/x.s:0,ctr:x.v?x.cl/x.v*100:0,ctor:x.cl?x.or/x.cl*100:0};}).filter(function(s){return s.sess>=2;}).sort(function(a,b){return b.gps-a.gps;});
+  f.forEach(function(r){
+    var sh=r.startHour||0;
+    if(grain==='custom'&&(sh<(ST.analysisCustFrom||0)||sh>(ST.analysisCustTo||23)))return;
+    var sl=slotFn(sh);
+    if(!sm[sl])sm[sl]={g:0,v:0,cl:0,or:0,s:0};
+    var x=sm[sl];x.g+=r.gmv;x.v+=r.viewers;x.cl+=r.uniqueClicks;x.or+=r.orders;x.s++;
+  });
+  var sa=slotOrd.map(function(sl){var x=sm[sl]||{g:0,v:0,cl:0,or:0,s:0};return {slot:sl,sess:x.s,gps:x.s?x.g/x.s:0,ctr:x.v?x.cl/x.v*100:0,ctor:x.cl?x.or/x.cl*100:0};}).filter(function(s){return s.sess>=1;}).sort(function(a,b){return b.gps-a.gps;});
   var topS=sa.slice(0,3),botS=sa.slice(-3).reverse();
   // Duration impact
   var sh=f.filter(function(r){return (r.duration||0)<45;}),lo=f.filter(function(r){return (r.duration||0)>=60;});
@@ -668,8 +688,24 @@ function tplAnalysis(f,hd){
         +'</div>'
       +'</div>'
     +'</div>'
-    // Slot analysis
-    +(sa.length?'<div style="display:flex;gap:16px;flex-wrap:wrap">'+sCard('🏆 Best Time Slots',topS)+sCard('⚠️ Worst Time Slots',botS)+'</div>':'')
+    // Slot analysis with grain picker
+    +(function(){
+      var di='background:#0f172a;border:1px solid #475569;border-radius:6px;color:#cbd5e1;font-size:12px;padding:3px 6px;width:52px;text-align:center';
+      var grainPicker='<div class="card" style="padding:12px 16px">'
+        +'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">'
+        +'<span style="color:#64748b;font-size:12px">Slot Size:</span>'
+        +[['1h','1 Hour'],['2h','2 Hours'],['4h','4 Hours'],['custom','Custom']].map(function(p){return pill(p[1],"setAnalysisGrain('"+p[0]+"')",grain===p[0]);}).join('')
+        +(grain==='custom'
+          ?'<span style="color:#334155;margin:0 4px">|</span>'
+           +'<span style="color:#64748b;font-size:12px">From:</span>'
+           +'<input type="number" min="0" max="23" value="'+(ST.analysisCustFrom||0)+'" onchange="setAnalysisCustFrom(parseInt(this.value))" style="'+di+'">'
+           +'<span style="color:#64748b;font-size:12px">To:</span>'
+           +'<input type="number" min="0" max="23" value="'+(ST.analysisCustTo||23)+'" onchange="setAnalysisCustTo(parseInt(this.value))" style="'+di+'">'
+           +'<span style="color:#475569;font-size:11px">(0 = 12AM · 23 = 11PM)</span>'
+          :'')
+        +'</div></div>';
+      return grainPicker+(sa.length?'<div style="display:flex;gap:16px;flex-wrap:wrap">'+sCard('🏆 Best Time Slots',topS)+sCard('⚠️ Worst Time Slots',botS)+'</div>':'');
+    }())
     // Root cause analysis
     +'<div class="card"><div class="card-title">Problem Analysis — Why Sessions Underperform</div>'
       +(bad.length
@@ -862,6 +898,9 @@ function setInsSlot(s){ST.insSlot=s;render();}
 function setSKU(s){ST.sku=s;render();}
 function setLeague(m){ST.league=m;ST.leaguePage=0;render();}
 function setLeaguePage(p){ST.leaguePage=p;render();}
+function setAnalysisGrain(g){ST.analysisSlotGrain=g;render();}
+function setAnalysisCustFrom(v){ST.analysisCustFrom=Math.max(0,Math.min(23,v||0));render();}
+function setAnalysisCustTo(v){ST.analysisCustTo=Math.max(0,Math.min(23,v||23));render();}
 function clearData(){
   ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';
   try{localStorage.removeItem('shopee_live');}catch(e){}
