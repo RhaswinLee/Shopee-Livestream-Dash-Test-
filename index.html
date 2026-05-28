@@ -571,7 +571,7 @@ function clearData(){
 // ── STORAGE ────────────────────────────────────────────────────────
 function saveToStorage(){
   try{localStorage.setItem('shopee_live',JSON.stringify({v:1,raw:ST.raw,files:ST.filesLoaded}));}
-  catch(e){console.warn('localStorage save failed (data may be too large):',e);}
+  catch(e){console.warn('localStorage save failed:',e);alert('Warning: your data could not be saved to browser storage. Data will be lost on refresh — please keep your CSV files available to re-upload.');}
 }
 function loadFromStorage(){
   try{
