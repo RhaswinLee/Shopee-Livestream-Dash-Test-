@@ -36,8 +36,13 @@ tr:hover td{background:rgba(51,65,85,.3)}
 <div id="modal" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.85);align-items:center;justify-content:center;padding:16px">
   <div style="background:#1e293b;border-radius:16px;border:1px solid #475569;padding:32px;max-width:480px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,.5)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
-      <h2 style="font-size:18px;font-weight:700;color:#fff">Upload Shopee Live Data</h2>
+      <h2 style="font-size:18px;font-weight:700;color:#fff">Upload Live Data</h2>
       <button onclick="closeModal()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <span style="color:#94a3b8;font-size:13px;font-weight:600">Platform:</span>
+      <button id="plat-btn-shopee" onclick="setUploadPlatform('shopee')" style="padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ee4d2d;background:rgba(238,77,45,.2);color:#ff6b4a">Shopee</button>
+      <button id="plat-btn-tiktok" onclick="setUploadPlatform('tiktok')" style="padding:6px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #475569;background:transparent;color:#94a3b8">TikTok</button>
     </div>
     <div id="dropzone" style="border:2px dashed #475569;border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:all .2s"
       ondragover="event.preventDefault();this.style.borderColor='#818cf8';this.style.background='rgba(99,102,241,.1)'"
@@ -96,7 +101,8 @@ var BUNDLE={
 // ── STATE ──────────────────────────────────────────────────────────
 var ST = {
   raw:null, isDemo:true, filesLoaded:0,
-  month:'All', last30:false, hostSel:'',
+  month:'All', last30:false, hostSel:'', platform:'All',
+  uploadPlatform:'shopee',
   tab:'overview',
   slotGrain:'2h',
   deepMetric:'gmv',
@@ -213,7 +219,7 @@ function genMock(){
       var sh=Math.floor(rng()*20)+2,sm=Math.floor(rng()*4)*15;
       var vw=Math.floor(b.vw*mult*noise),cl=Math.floor(vw*(0.15+rng()*0.2)),or=Math.floor(cl*(0.08+rng()*0.12));
       var ds=cur.toISOString().split('T')[0];
-      rows.push({id:id++,date:ds,month:mKey(ds),streamName:SN[h][Math.floor(rng()*3)],host:h,startHour:sh,startTime:p2(sh)+':'+p2(sm),duration:Math.floor(b.dur*(0.8+rng()*0.4)),viewers:vw,atc:Math.floor(b.atc*mult*noise),uniqueClicks:cl,orders:or,gmv:Math.floor(b.gmv*mult*noise),ctr:vw>0?cl/vw*100:0,ctor:cl>0?or/cl*100:0});
+      rows.push({id:id++,date:ds,month:mKey(ds),streamName:SN[h][Math.floor(rng()*3)],host:h,platform:'shopee',startHour:sh,startTime:p2(sh)+':'+p2(sm),duration:Math.floor(b.dur*(0.8+rng()*0.4)),viewers:vw,atc:Math.floor(b.atc*mult*noise),uniqueClicks:cl,orders:or,gmv:Math.floor(b.gmv*mult*noise),ctr:vw>0?cl/vw*100:0,ctor:cl>0?or/cl*100:0});
     }
     cur.setDate(cur.getDate()+1);
   }
@@ -227,6 +233,7 @@ function getFilt(){
     var ts=d.map(function(r){return new Date(r.date).getTime();}).filter(function(t){return !isNaN(t);});
     if(ts.length){var mx=Math.max.apply(null,ts);d=d.filter(function(r){return new Date(r.date).getTime()>=mx-30*864e5;});}
   } else if(ST.month!=='All'){d=d.filter(function(r){return r.month===ST.month;});}
+  if(ST.platform!=='All') d=d.filter(function(r){return r.platform===ST.platform;});
   if(ST.hostSel) d=d.filter(function(r){return r.host===ST.hostSel;});
   return d;
 }
@@ -322,19 +329,30 @@ function render(){
 
 function getUniqueHosts(){
   var seen={},list=[];
-  ST.raw.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!seen[r.host]){seen[r.host]=1;list.push(r.host);}});
-  // sort by known order first, then alphabetically
+  var src=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return r.platform===ST.platform;});
+  src.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!seen[r.host]){seen[r.host]=1;list.push(r.host);}});
   list.sort(function(a,b){return a.localeCompare(b);});
   return list;
 }
 
 function renderFilters(){
-  // Build month list from actual data — no hardcoded list
+  // Build month list from platform-filtered data
   var seen={},mset=[];
-  ST.raw.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;mset.push(r.month);}});
+  var msrc=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return r.platform===ST.platform;});
+  msrc.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;mset.push(r.month);}});
   var avail=['All'].concat(sortMonths(mset));
 
   var h='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
+  // Platform selector
+  h+='<span style="color:#64748b;font-size:12px">Platform:</span>';
+  [['All','All'],['Shopee','shopee'],['TikTok','tiktok']].forEach(function(p){
+    var active=ST.platform===p[1];
+    var bg=active?(p[1]==='shopee'?'rgba(238,77,45,.25)':p[1]==='tiktok'?'rgba(105,201,208,.2)':'rgba(129,140,248,.2)'):'transparent';
+    var bc=active?(p[1]==='shopee'?'#ee4d2d':p[1]==='tiktok'?'#69c9d0':'#818cf8'):'#475569';
+    var tc=active?(p[1]==='shopee'?'#ff6b4a':p[1]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
+    h+='<button onclick="setPlatform(\''+p[1]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[0]+'</button>';
+  });
+  h+='<span style="color:#334155;margin:0 4px">|</span>';
   h+='<span style="color:#64748b;font-size:12px">Period:</span>';
   h+=pill('Last 30','toggleLast30()',ST.last30);
   avail.forEach(function(m){
@@ -566,6 +584,14 @@ function makeHostChart(hd){
 function toggleLast30(){ST.last30=!ST.last30;if(ST.last30)ST.month='All';render();}
 function setMonth(m){ST.month=m;ST.last30=false;render();}
 function setHostSel(h){ST.hostSel=h;render();}
+function setPlatform(p){ST.platform=p;ST.hostSel='';ST.month='All';render();}
+function setUploadPlatform(p){
+  ST.uploadPlatform=p;
+  var sb=document.getElementById('plat-btn-shopee');
+  var tb=document.getElementById('plat-btn-tiktok');
+  if(sb){sb.style.background=p==='shopee'?'rgba(238,77,45,.2)':'transparent';sb.style.borderColor=p==='shopee'?'#ee4d2d':'#475569';sb.style.color=p==='shopee'?'#ff6b4a':'#94a3b8';}
+  if(tb){tb.style.background=p==='tiktok'?'rgba(105,201,208,.2)':'transparent';tb.style.borderColor=p==='tiktok'?'#69c9d0':'#475569';tb.style.color=p==='tiktok'?'#69c9d0':'#94a3b8';}
+}
 function setTab(t){ST.tab=t;render();}
 function setSlotGrain(g){ST.slotGrain=g;render();}
 function setDeepMetric(m){ST.deepMetric=m;render();}
@@ -606,6 +632,8 @@ function openModal(){
     if(ST.isDemo){hint.innerHTML='Select one or more CSV files — you can upload all months at once.';}
     else{hint.innerHTML='<b style="color:#34d399">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' loaded ('+ST.raw.length+' sessions total)</b> — new files will be <b>merged</b> into existing data.';}
   }
+  // Sync platform button styles
+  setUploadPlatform(ST.uploadPlatform);
   // Show export/clear sections only when real data exists
   var ew=document.getElementById('modal-export-wrap');
   if(ew)ew.style.display=ST.isDemo?'none':'block';
@@ -625,19 +653,19 @@ function handleFile(e){
 }
 
 // Parse one CSV file and merge its rows into ST.raw; call done(rowCount) when finished
-function parseOneCSV(f,done){
+function parseOneCSV(f,plat,done){
   Papa.parse(f,{header:true,skipEmptyLines:true,complete:function(res){
     var keys=res.data[0]?Object.keys(res.data[0]):[];
     if(keys.length&&keys[0].charCodeAt(0)===0xFEFF)keys[0]=keys[0].slice(1);
     function fc(als){return keys.find(function(k){return als.some(function(a){return k.toLowerCase().indexOf(a)>=0;});})||null;}
-    var nc=fc(['livestream name','name','title','stream','nama']);
-    var stc=fc(['start time','start waktu'])||fc(['date','tarikh']);
-    var drc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('duration')>=0&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
-    var vc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('viewer')>=0&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
-    var ac=keys.find(function(k){return k.toLowerCase()==='atc';})||fc(['add to cart','cart','atc']);
+    var nc=fc(['livestream name','live title','stream title','live name','name','title','stream','nama']);
+    var stc=fc(['start time','start date','live date','start waktu'])||fc(['date','tarikh']);
+    var drc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('duration')>=0||kl.indexOf('live duration')>=0)&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
+    var vc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('viewer')>=0||kl.indexOf('peak viewer')>=0)&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
+    var ac=keys.find(function(k){var kl=k.toLowerCase();return kl==='atc'||kl.indexOf('add to cart')>=0||kl.indexOf('product click')>=0;})||fc(['cart','atc']);
     var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
-    var oc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0;})||fc(['order','pesanan']);
-    var gc=keys.find(function(k){var kl=k.toLowerCase();return kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0;})||fc(['gmv','revenue','sales','amount']);
+    var oc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0)||(kl.indexOf('order')>=0&&kl.indexOf('gmv')<0&&kl.indexOf('revenue')<0&&kl.indexOf('amount')<0);})||fc(['order','pesanan']);
+    var gc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv');})||fc(['gmv','revenue','sales','amount']);
     var rows=res.data.map(function(r){
       var rawDt=stc?r[stc]:'';
       var ds='',sh=12,startStr='12:00';
@@ -651,7 +679,7 @@ function parseOneCSV(f,done){
       if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
       else{var dm2=String(durRaw).match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
       var nm=nc?r[nc]:'';
-      return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
+      return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),platform:plat||'shopee',startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
     }).filter(function(r){return r.gmv>0||r.viewers>0;});
     rows.forEach(function(r){r.ctr=r.viewers>0?r.uniqueClicks/r.viewers*100:0;r.ctor=r.uniqueClicks>0?r.orders/r.uniqueClicks*100:0;});
     if(rows.length){
@@ -681,11 +709,11 @@ function processFiles(files){
         if(ST.month!=='All'&&!mo[ST.month])ST.month='All';
         closeModal();rebuildHostsFromData();saveToStorage();render();
       } else {
-        alert('No valid data found. Make sure the file is a Shopee Live export CSV with Livestream Name, Start Time, and Sales columns.');
+        alert('No valid data found. Make sure the file is a live export CSV with Livestream Name/Title, Start Time, and Sales/Revenue columns.');
       }
       return;
     }
-    parseOneCSV(arr[idx++],function(n){totalAdded+=n;next();});
+    parseOneCSV(arr[idx++],ST.uploadPlatform,function(n){totalAdded+=n;next();});
   }
   next();
 }
