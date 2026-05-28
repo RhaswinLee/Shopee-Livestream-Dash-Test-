@@ -421,8 +421,8 @@ function renderKPIs(kpi){
 }
 
 function renderTabs(){
-  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot'];
-  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix'];
+  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis'];
+  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis'];
   document.getElementById('tabnav').innerHTML=tabs.map(function(t,i){
     return '<button class="tab-btn'+(ST.tab===t?' active':'')+'" onclick="setTab(\''+t+'\')">'+labels[i]+'</button>';
   }).join('');
@@ -438,6 +438,7 @@ function renderPanel(f,kpi,hd,sd){
   else if(ST.tab==='bundles') el.innerHTML=tplBundles();
   else if(ST.tab==='league') el.innerHTML=tplLeague(hd);
   else if(ST.tab==='hotspot') el.innerHTML=tplHotspot();
+  else if(ST.tab==='analysis') el.innerHTML=tplAnalysis(f,hd);
   // create charts after DOM insert
   if(ST.tab==='overview') makeOverviewCharts(hd);
   else if(ST.tab==='timeslots') makeSlotChart(sd);
@@ -569,6 +570,118 @@ function tplLeague(hd){
   return '<div style="display:flex;flex-direction:column;gap:16px">'
     +'<div class="card">'+mbtns+cards+paging+'</div>'
     +'<div class="card"><div class="card-title">Full League Standings — All '+total+' Hosts</div>'+bars+'</div></div>';
+}
+
+function tplAnalysis(f,hd){
+  if(!f||!f.length)return '<div class="card"><p style="color:#64748b;text-align:center;padding:40px">No data available. Upload your CSV files to see analysis.</p></div>';
+  var n=f.length;
+  var tG=0,tV=0,tCTR=0,tCTOR=0,tD=0;
+  f.forEach(function(r){tG+=r.gmv;tV+=r.viewers;tCTR+=r.ctr;tCTOR+=r.ctor;tD+=(r.duration||0);});
+  var aG=tG/n,aV=tV/n,aCTR=tCTR/n,aCTOR=tCTOR/n,aD=tD/n;
+  var bad=f.filter(function(r){return r.gmv<aG*0.5;});
+  var nb=bad.length||1;
+  var goodPct=Math.round((n-bad.length)/n*100);
+  var rc_vw=bad.filter(function(r){return r.viewers<aV*0.5;}).length;
+  var rc_ctr=bad.filter(function(r){return r.viewers>=aV*0.5&&r.ctr<aCTR*0.6;}).length;
+  var rc_ctor=bad.filter(function(r){return r.viewers>=aV*0.5&&r.ctr>=aCTR*0.5&&r.ctor<aCTOR*0.6;}).length;
+  var rc_short=bad.filter(function(r){return (r.duration||0)<45;}).length;
+  // Slot breakdown (4h)
+  var sm={};
+  f.forEach(function(r){var sl=s4h(r.startHour||12);if(!sm[sl])sm[sl]={g:0,v:0,cl:0,or:0,s:0};var x=sm[sl];x.g+=r.gmv;x.v+=r.viewers;x.cl+=r.uniqueClicks;x.or+=r.orders;x.s++;});
+  var sa=S4H.map(function(sl){var x=sm[sl]||{g:0,v:0,cl:0,or:0,s:0};return {slot:sl,sess:x.s,gps:x.s?x.g/x.s:0,ctr:x.v?x.cl/x.v*100:0,ctor:x.cl?x.or/x.cl*100:0};}).filter(function(s){return s.sess>=2;}).sort(function(a,b){return b.gps-a.gps;});
+  var topS=sa.slice(0,3),botS=sa.slice(-3).reverse();
+  // Duration impact
+  var sh=f.filter(function(r){return (r.duration||0)<45;}),lo=f.filter(function(r){return (r.duration||0)>=60;});
+  var shG=sh.length?sh.reduce(function(s,r){return s+r.gmv;},0)/sh.length:0;
+  var loG=lo.length?lo.reduce(function(s,r){return s+r.gmv;},0)/lo.length:0;
+  var durUp=shG>0?Math.round((loG-shG)/shG*100):0;
+  // Host insights
+  var hdS=hd.slice().sort(function(a,b){return b.avgGMV-a.avgGMV;});
+  var topH=hdS[0];
+  var weakH=hd.filter(function(h){return h.sess>=3&&h.avgGMV<aG*0.7;}).sort(function(a,b){return a.avgGMV-b.avgGMV;});
+  var peakSlot=topS.length?topS[0].slot:'peak hours';
+  var worstSlot=botS.length?botS[0].slot:'off-peak hours';
+  // Health colors
+  var hcl=goodPct>=70?'#34d399':goodPct>=50?'#fbbf24':'#f87171';
+  var hlbl=goodPct>=70?'Healthy':goodPct>=50?'Needs Attention':'At Risk';
+  // Root cause row builder
+  function rcRow(icon,pct,title,why,fix){
+    if(pct<5)return '';
+    var bc=pct>40?'#f87171':pct>20?'#fbbf24':'#94a3b8';
+    return '<div style="margin-bottom:14px;padding:14px;background:rgba(15,23,42,.6);border-radius:10px;border:1px solid rgba(71,85,105,.3)">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:16px">'+icon+'</span>'
+      +'<span style="font-size:13px;font-weight:600;color:#e2e8f0">'+title+'</span>'
+      +'<span style="margin-left:auto;font-size:12px;font-weight:700;color:'+bc+'">'+pct+'% of weak sessions</span></div>'
+      +'<div style="background:#334155;border-radius:4px;height:5px;margin-bottom:10px"><div style="height:5px;border-radius:4px;background:'+bc+';width:'+Math.min(pct,100)+'%"></div></div>'
+      +'<p style="font-size:12px;color:#64748b;margin-bottom:4px"><b style="color:#94a3b8">Why:</b> '+why+'</p>'
+      +'<p style="font-size:12px;color:#64748b"><b style="color:#34d399">Fix:</b> '+fix+'</p>'
+      +'</div>';
+  }
+  // Slot card builder
+  function sCard(title,slots){
+    var rows=slots.map(function(s,i){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(51,65,85,.4)">'
+        +'<span style="font-size:16px">'+['1️⃣','2️⃣','3️⃣'][i]+'</span>'
+        +'<div style="flex:1"><p style="font-weight:600;color:#cbd5e1;font-size:13px">'+s.slot+'</p>'
+        +'<p style="font-size:11px;color:#64748b">'+s.sess+' sessions &nbsp;·&nbsp; CTR '+s.ctr.toFixed(1)+'% &nbsp;·&nbsp; CTOR '+s.ctor.toFixed(1)+'%</p></div>'
+        +'<span style="font-size:14px;font-weight:700;color:#fff">'+fR(s.gps)+'/sess</span>'
+        +'</div>';
+    }).join('');
+    return '<div class="card" style="flex:1"><div class="card-title">'+title+'</div>'+rows+'</div>';
+  }
+  // Recommendations
+  var recs=[];
+  if(topS.length)recs.push('{peak} <b style="color:#34d399">'+topS[0].slot+'</b> is your peak slot ('+fR(topS[0].gps)+'/session avg). Front-load your best hosts and offers here.');
+  if(topH&&topH.avgGMV>aG*1.2)recs.push('{top} <b style="color:'+hcol(topH.host)+'">'+topH.host+'</b> averages '+fR(topH.avgGMV)+'/session — give them more prime-time slots to maximise GMV.');
+  if(weakH.length)recs.push('{weak} <b style="color:#f87171">'+weakH[0].host+'</b> is the lowest performer ('+fR(weakH[0].avgGMV)+'/session) — pair with a top host for co-streaming or review opening technique.');
+  if(durUp>20)recs.push('{dur} Sessions ≥60 min generate <b style="color:#fbbf24">+'+durUp+'%</b> more GMV than short sessions. Enforce a 60-min minimum per stream slot.');
+  if(botS.length)recs.push('{avoid} Avoid streaming in <b style="color:#f87171">'+botS[0].slot+'</b> ('+fR(botS[0].gps)+'/session) — if unavoidable, use it only for new-host training.');
+  if(rc_ctr/nb>=0.2)recs.push('{ctr} '+Math.round(rc_ctr/nb*100)+'% of weak sessions fail at click-through. Open every stream with a visible flash deal in the first 5 minutes.');
+  if(rc_ctor/nb>=0.15)recs.push('{conv} '+Math.round(rc_ctor/nb*100)+'% of weak sessions have viewers clicking but not buying. Add a stream-exclusive voucher code to close hesitant buyers.');
+  var icons={peak:'⏰',top:'🏆',weak:'📈',dur:'⏱️',avoid:'🚫',ctr:'🖱️',conv:'🛒'};
+  var recHtml=recs.map(function(r,i){
+    var key=r.match(/^\{(\w+)\}/);
+    var ico=key?icons[key[1]]||'💡':'💡';
+    var txt=r.replace(/^\{\w+\}\s*/,'');
+    return '<div style="display:flex;gap:12px;padding:14px;background:rgba(15,23,42,.5);border-radius:10px;border-left:3px solid #6366f1;margin-bottom:10px">'
+      +'<span style="font-size:18px;flex-shrink:0;margin-top:1px">'+ico+'</span>'
+      +'<div><p style="font-size:13px;color:#cbd5e1;line-height:1.6">'+txt+'</p></div>'
+      +'</div>';
+  }).join('');
+  return '<div style="display:flex;flex-direction:column;gap:16px">'
+    // Health overview
+    +'<div class="card"><div class="card-title">Stream Health Overview</div>'
+      +'<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">'
+        +'<div style="flex:1;min-width:220px">'
+          +'<div style="display:flex;justify-content:space-between;margin-bottom:6px">'
+            +'<span style="font-size:13px;color:#94a3b8">Sessions at or above 50% benchmark</span>'
+            +'<span style="font-size:13px;font-weight:700;color:'+hcl+'">'+goodPct+'%&nbsp;·&nbsp;'+hlbl+'</span>'
+          +'</div>'
+          +'<div style="background:#334155;border-radius:8px;height:12px"><div style="height:12px;border-radius:8px;background:'+hcl+';width:'+goodPct+'%"></div></div>'
+          +'<p style="font-size:11px;color:#64748b;margin-top:6px">'+n+' total &nbsp;·&nbsp; '+(n-bad.length)+' good &nbsp;·&nbsp; '+bad.length+' weak &nbsp;·&nbsp; Avg GMV '+fR(aG)+'/sess</p>'
+        +'</div>'
+        +'<div style="display:flex;gap:20px;flex-shrink:0">'
+          +'<div style="text-align:center"><p style="font-size:18px;font-weight:700;color:#fff">'+aCTR.toFixed(1)+'%</p><p style="font-size:11px;color:#64748b">Avg CTR</p></div>'
+          +'<div style="text-align:center"><p style="font-size:18px;font-weight:700;color:#fff">'+aCTOR.toFixed(1)+'%</p><p style="font-size:11px;color:#64748b">Avg CTOR</p></div>'
+          +'<div style="text-align:center"><p style="font-size:18px;font-weight:700;color:#fff">'+fN(aV)+'</p><p style="font-size:11px;color:#64748b">Avg Viewers</p></div>'
+          +'<div style="text-align:center"><p style="font-size:18px;font-weight:700;color:#fff">'+Math.round(aD)+'m</p><p style="font-size:11px;color:#64748b">Avg Duration</p></div>'
+        +'</div>'
+      +'</div>'
+    +'</div>'
+    // Slot analysis
+    +(sa.length?'<div style="display:flex;gap:16px;flex-wrap:wrap">'+sCard('🏆 Best Time Slots',topS)+sCard('⚠️ Worst Time Slots',botS)+'</div>':'')
+    // Root cause analysis
+    +'<div class="card"><div class="card-title">Problem Analysis — Why Sessions Underperform</div>'
+      +(bad.length
+        ?rcRow('👁️',Math.round(rc_vw/nb*100),'Low Viewer Count','Streaming at off-peak hours limits organic reach and discoverability.','Reschedule these sessions to <b>'+peakSlot+'</b> based on your peak slot data above.')
+         +rcRow('🖱️',Math.round(rc_ctr/nb*100),'Viewers Not Clicking (Low CTR)','Product presentation is too passive — no urgency or clear offer in opening minutes.','Start every stream with a flash deal showcase; pin your best SKU in the first 5 minutes.')
+         +rcRow('🛒',Math.round(rc_ctor/nb*100),'Clicks Not Converting (Low CTOR)','Pricing friction or cart hesitation — viewers are interested but not committing.','Introduce a stream-exclusive voucher code; use countdown timers and bundle offers to create urgency.')
+         +rcRow('⏱️',Math.round(rc_short/nb*100),'Session Too Short (<45 min)','Short sessions do not give enough time to build trust, showcase products, and run deals.','Set a 60-minute minimum rule. Plan a content checklist: intro → demo → deal → close.')
+        :'<p style="color:#34d399;font-size:13px">No significant problems detected — all sessions are performing well!</p>')
+    +'</div>'
+    // Recommendations
+    +(recs.length?'<div class="card"><div class="card-title">Improvement Recommendations</div>'+recHtml+'</div>':'')
+    +'</div>';
 }
 
 function tplHotspot(){
