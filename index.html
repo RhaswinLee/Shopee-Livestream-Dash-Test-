@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Shopee Live Analytics</title>
+<title>Live Stream Analytics</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -54,7 +54,7 @@ tr:hover td{background:rgba(51,65,85,.3)}
       <p style="color:#cbd5e1;font-weight:500">Drag &amp; drop CSV files here or click to browse</p>
       <p style="color:#64748b;font-size:13px;margin-top:4px">Select multiple months at once — all data will be merged</p>
     </div>
-    <div id="modal-hint" style="font-size:12px;color:#64748b;margin-top:12px;min-height:16px">Upload your first CSV file to replace demo data.</div>
+    <div id="modal-hint" style="font-size:12px;color:#64748b;margin-top:12px;min-height:16px">Platform auto-detected from filename — name files like <b style="color:#94a3b8">Shopee Jan 2026.csv</b> or <b style="color:#94a3b8">TikTok Jan 2026.csv</b>.</div>
     <div style="background:rgba(51,65,85,.5);border-radius:8px;padding:12px;margin-top:8px;font-size:12px;color:#64748b">
       <b style="color:#94a3b8">Expected columns:</b> Livestream Name · Start Time · Duration · Viewers · ATC · Orders · Sales (Shopee Live export format)
     </div>
@@ -101,7 +101,8 @@ var BUNDLE={
 // ── STATE ──────────────────────────────────────────────────────────
 var ST = {
   raw:null, isDemo:true, filesLoaded:0,
-  month:'All', last30:false, hostSel:'', platform:'All',
+  month:'All', period:'all', customFrom:'', customTo:'',
+  hostSel:'', platform:'All',
   uploadPlatform:'shopee',
   tab:'overview',
   slotGrain:'2h',
@@ -229,11 +230,17 @@ function genMock(){
 // ── COMPUTED ───────────────────────────────────────────────────────
 function getFilt(){
   var d=ST.raw;
-  if(ST.last30){
+  if(ST.period==='last7'||ST.period==='last30'){
+    var days=ST.period==='last7'?7:30;
     var ts=d.map(function(r){return new Date(r.date).getTime();}).filter(function(t){return !isNaN(t);});
-    if(ts.length){var mx=Math.max.apply(null,ts);d=d.filter(function(r){return new Date(r.date).getTime()>=mx-30*864e5;});}
-  } else if(ST.month!=='All'){d=d.filter(function(r){return r.month===ST.month;});}
-  if(ST.platform!=='All') d=d.filter(function(r){return r.platform===ST.platform;});
+    if(ts.length){var mx=Math.max.apply(null,ts);d=d.filter(function(r){return new Date(r.date).getTime()>=mx-days*864e5;});}
+  } else if(ST.period==='month'&&ST.month!=='All'){
+    d=d.filter(function(r){return r.month===ST.month;});
+  } else if(ST.period==='custom'&&ST.customFrom&&ST.customTo){
+    var fr=new Date(ST.customFrom).getTime(),to=new Date(ST.customTo).getTime()+86399999;
+    d=d.filter(function(r){var t=new Date(r.date).getTime();return t>=fr&&t<=to;});
+  }
+  if(ST.platform!=='All') d=d.filter(function(r){return (r.platform||'shopee')===ST.platform;});
   if(ST.hostSel) d=d.filter(function(r){return r.host===ST.hostSel;});
   return d;
 }
@@ -242,7 +249,7 @@ function getKPI(f){
   f.forEach(function(r){gmv+=r.gmv;vw+=r.viewers;atc+=r.atc;cl+=r.uniqueClicks;or+=r.orders;hrs+=r.duration||0;});
   hrs/=60;var n=f.length;
   var prevM=null;
-  if(!ST.last30&&ST.month!=='All'){var ms={};ST.raw.forEach(function(r){if(r.month)ms[r.month]=1;});var allMo=sortMonths(Object.keys(ms));var idx=allMo.indexOf(ST.month);if(idx>0)prevM=allMo[idx-1];}
+  if(ST.period==='month'&&ST.month!=='All'){var ms={};ST.raw.forEach(function(r){if(r.month)ms[r.month]=1;});var allMo=sortMonths(Object.keys(ms));var idx=allMo.indexOf(ST.month);if(idx>0)prevM=allMo[idx-1];}
   var pg=prevM?ST.raw.filter(function(r){return r.month===prevM;}).reduce(function(s,r){return s+r.gmv;},0):null;
   return{gmv:gmv,vw:vw,atc:atc,cl:cl,or:or,hrs:hrs,n:n,ctr:vw>0?cl/vw*100:0,ctor:cl>0?or/cl*100:0,mom:pg?(gmv-pg)/pg*100:null};
 }
@@ -329,21 +336,22 @@ function render(){
 
 function getUniqueHosts(){
   var seen={},list=[];
-  var src=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return r.platform===ST.platform;});
+  var src=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return (r.platform||'shopee')===ST.platform;});
   src.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!seen[r.host]){seen[r.host]=1;list.push(r.host);}});
   list.sort(function(a,b){return a.localeCompare(b);});
   return list;
 }
 
 function renderFilters(){
-  // Build month list from platform-filtered data
+  // Build month list from platform-filtered data (backward compat: no platform field = shopee)
   var seen={},mset=[];
-  var msrc=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return r.platform===ST.platform;});
+  var msrc=ST.platform==='All'?ST.raw:ST.raw.filter(function(r){return (r.platform||'shopee')===ST.platform;});
   msrc.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;mset.push(r.month);}});
-  var avail=['All'].concat(sortMonths(mset));
+  var months=sortMonths(mset);
 
   var h='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
-  // Platform selector
+
+  // Platform pills
   h+='<span style="color:#64748b;font-size:12px">Platform:</span>';
   [['All','All'],['Shopee','shopee'],['TikTok','tiktok']].forEach(function(p){
     var active=ST.platform===p[1];
@@ -352,24 +360,45 @@ function renderFilters(){
     var tc=active?(p[1]==='shopee'?'#ff6b4a':p[1]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
     h+='<button onclick="setPlatform(\''+p[1]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[0]+'</button>';
   });
+
   h+='<span style="color:#334155;margin:0 4px">|</span>';
+
+  // Period dropdown
   h+='<span style="color:#64748b;font-size:12px">Period:</span>';
-  h+=pill('Last 30','toggleLast30()',ST.last30);
-  avail.forEach(function(m){
-    var active=!ST.last30&&ST.month===m;
-    h+='<button onclick="setMonth(\''+m+'\')" class="pill'+(active?' active':'')+'">'+m+'</button>';
-  });
-  // Host dropdown
+  var pdrop='<select class="hsel" onchange="setPeriod(this.value)">';
+  pdrop+='<option value="all"'+(ST.period==='all'?' selected':'')+'>All Time</option>';
+  pdrop+='<optgroup label="Quick Range">';
+  pdrop+='<option value="last7"'+(ST.period==='last7'?' selected':'')+'>Last 7 Days</option>';
+  pdrop+='<option value="last30"'+(ST.period==='last30'?' selected':'')+'>Last 30 Days</option>';
+  pdrop+='</optgroup>';
+  if(months.length){
+    pdrop+='<optgroup label="Monthly">';
+    months.forEach(function(m){pdrop+='<option value="month:'+m+'"'+(ST.period==='month'&&ST.month===m?' selected':'')+'>'+m+'</option>';});
+    pdrop+='</optgroup>';
+  }
+  pdrop+='<option value="custom"'+(ST.period==='custom'?' selected':'')+'>Custom Range</option>';
+  pdrop+='</select>';
+  h+=pdrop;
+
+  // Custom date inputs
+  if(ST.period==='custom'){
+    var di='background:#1e293b;border:1px solid #475569;border-radius:6px;color:#cbd5e1;font-size:12px;padding:4px 8px;cursor:pointer';
+    h+='<input type="date" value="'+ST.customFrom+'" onchange="setCustomFrom(this.value)" style="'+di+'">';
+    h+='<span style="color:#64748b;font-size:12px">–</span>';
+    h+='<input type="date" value="'+ST.customTo+'" onchange="setCustomTo(this.value)" style="'+di+'">';
+  }
+
   h+='<span style="color:#334155;margin:0 4px">|</span>';
+
+  // Host dropdown
   h+='<span style="color:#64748b;font-size:12px">Host:</span>';
   var hosts=getUniqueHosts();
   var opts='<option value="">All Hosts</option>';
   hosts.forEach(function(hh){
-    var col='color:'+hcol(hh)+';font-weight:600';
-    opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="'+col+'">'+hh+'</option>';
+    opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="color:'+hcol(hh)+';font-weight:600">'+hh+'</option>';
   });
   h+='<select class="hsel" onchange="setHostSel(this.value)">'+opts+'</select>';
-  // File count info when real data is loaded (no reset button here to avoid accidents)
+
   if(!ST.isDemo){
     h+='<span style="color:#334155;margin:0 4px">|</span>';
     h+='<span style="font-size:12px;color:#64748b">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' · '+ST.raw.length+' sessions</span>';
@@ -581,10 +610,15 @@ function makeHostChart(hd){
 }
 
 // ── EVENT HANDLERS ─────────────────────────────────────────────────
-function toggleLast30(){ST.last30=!ST.last30;if(ST.last30)ST.month='All';render();}
-function setMonth(m){ST.month=m;ST.last30=false;render();}
+function setPeriod(v){
+  var m=v.match(/^month:(.+)/);
+  if(m){ST.period='month';ST.month=m[1];}else{ST.period=v;}
+  render();
+}
+function setCustomFrom(v){ST.customFrom=v;if(ST.customTo)render();}
+function setCustomTo(v){ST.customTo=v;if(ST.customFrom)render();}
 function setHostSel(h){ST.hostSel=h;render();}
-function setPlatform(p){ST.platform=p;ST.hostSel='';ST.month='All';render();}
+function setPlatform(p){ST.platform=p;ST.hostSel='';ST.period='all';render();}
 function setUploadPlatform(p){
   ST.uploadPlatform=p;
   var sb=document.getElementById('plat-btn-shopee');
@@ -699,6 +733,14 @@ function parseOneCSV(f,plat,done){
   }});
 }
 
+// Detect platform from filename (e.g. "Shopee Jan 2026.csv" → shopee)
+function detectPlatformFromName(filename){
+  var n=(filename||'').toLowerCase();
+  if(n.indexOf('tiktok')>=0||n.indexOf('tik tok')>=0||n.indexOf('tik_tok')>=0)return 'tiktok';
+  if(n.indexOf('shopee')>=0)return 'shopee';
+  return ST.uploadPlatform; // fallback to modal selection
+}
+
 // Process a FileList sequentially; close modal + persist + render when all done
 function processFiles(files){
   var arr=Array.prototype.slice.call(files),idx=0,totalAdded=0;
@@ -713,7 +755,7 @@ function processFiles(files){
       }
       return;
     }
-    parseOneCSV(arr[idx++],ST.uploadPlatform,function(n){totalAdded+=n;next();});
+    var f=arr[idx++];parseOneCSV(f,detectPlatformFromName(f.name),function(n){totalAdded+=n;next();});
   }
   next();
 }
@@ -726,7 +768,7 @@ document.getElementById('root').innerHTML=
 +'<div style="max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between">'
 +'<div style="display:flex;align-items:center;gap:12px">'
 +'<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>'
-+'<div><h1 style="font-size:16px;font-weight:700;color:#fff;line-height:1">Shopee Live Analytics</h1><p style="font-size:12px;color:#64748b">E-Commerce Stream Performance Dashboard</p></div></div>'
++'<div><h1 style="font-size:16px;font-weight:700;color:#fff;line-height:1">Live Stream Analytics</h1><p style="font-size:12px;color:#64748b">Multi-Platform Performance Dashboard</p></div></div>'
 +'<div style="display:flex;align-items:center;gap:12px">'
 +'<span id="badge" class="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400">Demo · 0 sessions</span>'
 +'<button onclick="openModal()" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#4f46e5;border:none;color:#fff;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer">⬆ Upload CSV</button>'
@@ -738,7 +780,7 @@ document.getElementById('root').innerHTML=
 +'<div id="tabnav" style="background:rgba(30,41,59,.6);border-radius:12px;border:1px solid #334155;padding:6px;display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px"></div>'
 +'<div id="panel"></div>'
 +'</div>'
-+'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Shopee Live Analytics · Demo data — upload your CSV to see real metrics</div>'
++'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Live Stream Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
 
 // Init: localStorage → shared data.json → demo
