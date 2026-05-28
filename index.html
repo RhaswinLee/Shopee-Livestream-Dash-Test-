@@ -110,7 +110,7 @@ var ST = {
   deepMetric:'gmv',
   insHost:'QAQA', insSlot:'2h',
   sku:'Lipscreen',
-  league:'gmv'
+  league:'gmv', leaguePage:0
 };
 var CHS = {}; // chart instances
 var PP={open:false,mode:'',calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),s0:null,s1:null};
@@ -522,27 +522,53 @@ function tplLeague(hd){
   var mbtns='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px"><span style="color:#64748b;font-size:12px;line-height:28px">Rank by:</span>'
     +[['gmv','GMV'],['ctor','CTOR %'],['ctr','CTR %'],['hours','Live Hours'],['sess','Sessions']].map(function(p){return pill(p[1],"setLeague('"+p[0]+"')",ST.league===p[0]);}).join('')+'</div>';
   var medals=['🥇','🥈','🥉'];
-  function hcard(h,rank,medal){
-    return '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:rgba(51,65,85,.4);border:1px solid rgba(71,85,105,.4);margin-bottom:8px">'
-      +(medal?'<span style="font-size:20px;width:28px;text-align:center">'+medal+'</span>':'<div style="width:28px;height:28px;border-radius:50%;background:rgba(239,68,68,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#f87171;flex-shrink:0">#'+rank+'</div>')
-      +'<div style="flex:1;min-width:0"><p style="font-weight:700;font-size:14px;color:'+hcol(h.host)+'">'+h.host+'</p><p style="font-size:12px;color:#94a3b8">'+h.sess+' sessions · '+h.hours.toFixed(0)+'h live</p></div>'
-      +'<div style="text-align:right"><p style="font-size:14px;font-weight:700;color:#fff">'+dv(h)+'</p><p style="font-size:11px;color:#64748b">'+key.toUpperCase()+'</p></div>'
+  var PER=10,total=sorted.length;
+  var totalPages=Math.max(1,Math.ceil(total/PER));
+  var page=Math.min(ST.leaguePage||0,totalPages-1);
+  var pageHosts=sorted.slice(page*PER,page*PER+PER);
+
+  function hcard(h,rank){
+    var medal=rank<=3?medals[rank-1]:null;
+    var isBot=rank>total-3&&!medal;
+    var badgeBg=medal?'transparent':isBot?'rgba(239,68,68,.2)':'rgba(99,102,241,.15)';
+    var badgeTc=isBot?'#f87171':'#94a3b8';
+    var rankEl=medal
+      ?'<span style="font-size:20px;width:32px;text-align:center;flex-shrink:0">'+medal+'</span>'
+      :'<div style="width:32px;height:32px;border-radius:50%;background:'+badgeBg+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:'+badgeTc+';flex-shrink:0">#'+rank+'</div>';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:rgba(51,65,85,.35);border:1px solid rgba(71,85,105,.4);margin-bottom:8px">'
+      +rankEl
+      +'<div style="flex:1;min-width:0"><p style="font-weight:700;font-size:14px;color:'+hcol(h.host)+'">'+h.host+'</p>'
+      +'<p style="font-size:12px;color:#94a3b8">'+h.sess+' sessions · '+h.hours.toFixed(0)+'h live</p></div>'
+      +'<div style="text-align:right"><p style="font-size:16px;font-weight:700;color:#fff">'+dv(h)+'</p>'
+      +'<p style="font-size:11px;color:#64748b">'+key.toUpperCase()+'</p></div>'
       +'</div>';
   }
-  var top=sorted.slice(0,3).map(function(h,i){return hcard(h,i+1,medals[i]);}).join('');
-  var bot=sorted.slice(-3).reverse().map(function(h,i){return hcard(h,sorted.length-i,null);}).join('');
+
+  var cards=pageHosts.map(function(h,i){return hcard(h,page*PER+i+1);}).join('');
+  if(!cards)cards='<p style="color:#64748b;text-align:center;padding:24px">No hosts on this page</p>';
+
+  var pbtn='background:#1e293b;border:1px solid #475569;border-radius:8px;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;color:#cbd5e1';
+  var paging=totalPages>1
+    ?'<div style="display:flex;align-items:center;justify-content:center;gap:16px;padding-top:8px;border-top:1px solid rgba(51,65,85,.5);margin-top:4px">'
+      +'<button onclick="setLeaguePage('+(page-1)+')" style="'+pbtn+(page===0?';opacity:.35;cursor:not-allowed':'')+'" '+(page===0?'disabled':'')+'>← Prev</button>'
+      +'<span style="color:#94a3b8;font-size:13px">Page '+(page+1)+' of '+totalPages+' &nbsp;·&nbsp; '+total+' hosts</span>'
+      +'<button onclick="setLeaguePage('+(page+1)+')" style="'+pbtn+(page===totalPages-1?';opacity:.35;cursor:not-allowed':'')+'" '+(page===totalPages-1?'disabled':'')+'>Next →</button>'
+      +'</div>'
+    :'';
+
   var maxV=(sorted[0]&&sorted[0][key])||1;
   var bars=sorted.map(function(h,i){
     var v=h[key]||0,pct=maxV>0?Math.round(v/maxV*100):0;
-    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
-      +'<span style="font-size:12px;color:#64748b;width:16px;text-align:right">'+(i+1)+'</span>'
-      +'<span style="font-size:14px;font-weight:700;width:52px;color:'+hcol(h.host)+'">'+h.host+'</span>'
-      +'<div style="flex:1;background:#334155;border-radius:6px;height:12px"><div style="height:12px;border-radius:6px;background:'+hcol(h.host)+';width:'+pct+'%;transition:width .4s"></div></div>'
-      +'<span style="font-size:12px;font-weight:500;color:#e2e8f0;width:72px;text-align:right">'+dv(h)+'</span></div>';
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+      +'<span style="font-size:11px;color:#64748b;width:20px;text-align:right;flex-shrink:0">'+(i+1)+'</span>'
+      +'<span style="font-size:13px;font-weight:700;width:56px;flex-shrink:0;color:'+hcol(h.host)+'">'+h.host+'</span>'
+      +'<div style="flex:1;background:#334155;border-radius:6px;height:10px"><div style="height:10px;border-radius:6px;background:'+hcol(h.host)+';width:'+pct+'%;transition:width .4s"></div></div>'
+      +'<span style="font-size:12px;font-weight:500;color:#e2e8f0;width:80px;text-align:right;flex-shrink:0">'+dv(h)+'</span></div>';
   }).join('');
+
   return '<div style="display:flex;flex-direction:column;gap:16px">'
-    +'<div class="card" style="padding-bottom:4px">'+mbtns+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px"><div><div class="card-title">🏆 Top Performers</div>'+top+'</div><div><div class="card-title">📉 Needs Improvement</div>'+bot+'</div></div></div>'
-    +'<div class="card"><div class="card-title">Full League Standings</div>'+bars+'</div></div>';
+    +'<div class="card">'+mbtns+cards+paging+'</div>'
+    +'<div class="card"><div class="card-title">Full League Standings — All '+total+' Hosts</div>'+bars+'</div></div>';
 }
 
 function tplHotspot(){
@@ -721,7 +747,8 @@ function setDeepMetric(m){ST.deepMetric=m;render();}
 function setInsHost(h){ST.insHost=h;render();}
 function setInsSlot(s){ST.insSlot=s;render();}
 function setSKU(s){ST.sku=s;render();}
-function setLeague(m){ST.league=m;render();}
+function setLeague(m){ST.league=m;ST.leaguePage=0;render();}
+function setLeaguePage(p){ST.leaguePage=p;render();}
 function clearData(){
   ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';
   try{localStorage.removeItem('shopee_live');}catch(e){}
