@@ -167,8 +167,8 @@ function rebuildHostsFromData(){
   });
 }
 function pNum(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return isNaN(v)?0:v;return parseFloat(String(v).replace(/[^0-9.-]/g,''))||0;}
-function fR(n){if(!n||isNaN(n))return 'RM0';if(n>=1e6)return 'RM'+(n/1e6).toFixed(1)+'M';if(n>=1e3)return 'RM'+(n/1e3).toFixed(1)+'K';return 'RM'+Math.round(n);}
-function fN(n){if(!n||isNaN(n))return '0';if(n>=1e3)return (n/1e3).toFixed(1)+'K';return String(Math.round(n));}
+function fR(n){if(!n||isNaN(n))return 'RM0';return 'RM'+Math.round(n).toLocaleString();}
+function fN(n){if(!n||isNaN(n))return '0';return Math.round(n).toLocaleString();}
 function mKey(ds){
   if(!ds)return '';
   // Fast path: YYYY-MM-DD (timezone-safe, no Date object needed)
@@ -247,7 +247,7 @@ function getHosts(f){
   });
   // Return ALL hosts present in filtered data (not just preset 6)
   var alist=Object.keys(mp);
-  alist.sort(function(a,b){var ia=HOSTS.indexOf(a),ib=HOSTS.indexOf(b);if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);});
+  alist.sort(function(a,b){return a.localeCompare(b);});
   return alist.map(function(h){
     var d=mp[h];
     return Object.assign({},d,{ctr:d.vw>0?d.cl/d.vw*100:0,ctor:d.cl>0?d.or/d.cl*100:0,avgGMV:d.sess>0?d.gmv/d.sess:0,hours:d.dur/60});
@@ -313,7 +313,7 @@ function getUniqueHosts(){
   var seen={},list=[];
   ST.raw.forEach(function(r){if(r.host&&r.host!=='Unknown'&&!seen[r.host]){seen[r.host]=1;list.push(r.host);}});
   // sort by known order first, then alphabetically
-  list.sort(function(a,b){var ia=HOSTS.indexOf(a),ib=HOSTS.indexOf(b);if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);});
+  list.sort(function(a,b){return a.localeCompare(b);});
   return list;
 }
 
