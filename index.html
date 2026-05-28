@@ -53,7 +53,18 @@ tr:hover td{background:rgba(51,65,85,.3)}
     <div style="background:rgba(51,65,85,.5);border-radius:8px;padding:12px;margin-top:8px;font-size:12px;color:#64748b">
       <b style="color:#94a3b8">Expected columns:</b> Livestream Name · Start Time · Duration · Viewers · ATC · Orders · Sales (Shopee Live export format)
     </div>
-    <div id="modal-clear-wrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(71,85,105,.4);text-align:center">
+    <div id="modal-export-wrap" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(71,85,105,.4)">
+      <p style="color:#94a3b8;font-size:13px;font-weight:600;margin-bottom:10px">Share with your team</p>
+      <button onclick="exportData()" style="width:100%;padding:10px;background:rgba(99,102,241,.2);border:1px solid #818cf8;border-radius:8px;color:#a5b4fc;font-size:13px;font-weight:600;cursor:pointer">⬇ Download data.json</button>
+      <div style="margin-top:10px;background:rgba(15,23,42,.6);border-radius:8px;padding:10px;font-size:11px;color:#64748b;line-height:1.6">
+        <b style="color:#94a3b8">To make this data visible to everyone:</b><br>
+        1. Click the button above to download <b style="color:#cbd5e1">data.json</b><br>
+        2. Go to your GitHub repo → <b style="color:#cbd5e1">Add file → Upload files</b><br>
+        3. Upload <b style="color:#cbd5e1">data.json</b> and commit<br>
+        4. Vercel redeploys in ~1 min — all visitors will see your data
+      </div>
+    </div>
+    <div id="modal-clear-wrap" style="display:none;margin-top:12px;text-align:center">
       <button onclick="if(confirm('Clear all uploaded data and return to demo mode?'))clearData();" style="background:none;border:none;color:#64748b;font-size:12px;cursor:pointer;text-decoration:underline">Clear all uploaded data &amp; reset to demo</button>
     </div>
   </div>
@@ -569,6 +580,11 @@ function clearData(){
 }
 
 // ── STORAGE ────────────────────────────────────────────────────────
+function exportData(){
+  var blob=new Blob([JSON.stringify({v:1,raw:ST.raw,files:ST.filesLoaded})],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='data.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
 function saveToStorage(){
   try{localStorage.setItem('shopee_live',JSON.stringify({v:1,raw:ST.raw,files:ST.filesLoaded}));}
   catch(e){console.warn('localStorage save failed:',e);alert('Warning: your data could not be saved to browser storage. Data will be lost on refresh — please keep your CSV files available to re-upload.');}
@@ -590,7 +606,9 @@ function openModal(){
     if(ST.isDemo){hint.innerHTML='Select one or more CSV files — you can upload all months at once.';}
     else{hint.innerHTML='<b style="color:#34d399">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' loaded ('+ST.raw.length+' sessions total)</b> — new files will be <b>merged</b> into existing data.';}
   }
-  // Show the clear-data option only when real data exists
+  // Show export/clear sections only when real data exists
+  var ew=document.getElementById('modal-export-wrap');
+  if(ew)ew.style.display=ST.isDemo?'none':'block';
   var cw=document.getElementById('modal-clear-wrap');
   if(cw)cw.style.display=ST.isDemo?'none':'block';
   document.getElementById('modal').style.display='flex';
@@ -695,9 +713,18 @@ document.getElementById('root').innerHTML=
 +'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Shopee Live Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
 
-// Restore previously uploaded data from localStorage; fall back to demo
-if(!loadFromStorage()){ST.raw=genMock();}else{rebuildHostsFromData();saveToStorage();}
-render();
+// Init: localStorage → shared data.json → demo
+(function doInit(){
+  if(loadFromStorage()){rebuildHostsFromData();saveToStorage();render();return;}
+  fetch('/data.json',{cache:'no-cache'})
+    .then(function(r){if(!r.ok)throw 0;return r.json();})
+    .then(function(p){
+      if(p&&p.raw&&p.raw.length){ST.raw=p.raw;ST.filesLoaded=p.files||0;ST.isDemo=false;rebuildHostsFromData();saveToStorage();}
+      else{ST.raw=genMock();}
+    })
+    .catch(function(){ST.raw=genMock();})
+    .then(function(){render();});
+}());
 </script>
 </body>
 </html>
