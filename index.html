@@ -33,6 +33,7 @@ tr:hover td{background:rgba(51,65,85,.3)}
 <div id="root"></div>
 
 <!-- UPLOAD MODAL -->
+<div id="period-panel" onclick="event.stopPropagation()" style="display:none;position:fixed;z-index:500;background:#1e293b;border:1px solid #334155;border-radius:12px;box-shadow:0 24px 48px rgba(0,0,0,.7)"></div>
 <div id="modal" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.85);align-items:center;justify-content:center;padding:16px">
   <div style="background:#1e293b;border-radius:16px;border:1px solid #475569;padding:32px;max-width:480px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,.5)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
@@ -112,6 +113,7 @@ var ST = {
   league:'gmv'
 };
 var CHS = {}; // chart instances
+var PP={open:false,mode:'',calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),s0:null,s1:null};
 
 // ── UTILITIES ──────────────────────────────────────────────────────
 // Dynamic colour palette for hosts beyond the preset 6
@@ -230,7 +232,12 @@ function genMock(){
 // ── COMPUTED ───────────────────────────────────────────────────────
 function getFilt(){
   var d=ST.raw;
-  if(ST.period==='last7'||ST.period==='last30'){
+  if(ST.period==='today'||ST.period==='yesterday'){
+    var now=new Date(),tgt;
+    if(ST.period==='today'){tgt=now.toISOString().split('T')[0];}
+    else{var yd=new Date(now-864e5);tgt=yd.toISOString().split('T')[0];}
+    d=d.filter(function(r){return r.date===tgt;});
+  } else if(ST.period==='last7'||ST.period==='last30'){
     var days=ST.period==='last7'?7:30;
     var ts=d.map(function(r){return new Date(r.date).getTime();}).filter(function(t){return !isNaN(t);});
     if(ts.length){var mx=Math.max.apply(null,ts);d=d.filter(function(r){return new Date(r.date).getTime()>=mx-days*864e5;});}
@@ -363,30 +370,9 @@ function renderFilters(){
 
   h+='<span style="color:#334155;margin:0 4px">|</span>';
 
-  // Period dropdown
+  // Period button → opens floating panel
   h+='<span style="color:#64748b;font-size:12px">Period:</span>';
-  var pdrop='<select class="hsel" onchange="setPeriod(this.value)">';
-  pdrop+='<option value="all"'+(ST.period==='all'?' selected':'')+'>All Time</option>';
-  pdrop+='<optgroup label="Quick Range">';
-  pdrop+='<option value="last7"'+(ST.period==='last7'?' selected':'')+'>Last 7 Days</option>';
-  pdrop+='<option value="last30"'+(ST.period==='last30'?' selected':'')+'>Last 30 Days</option>';
-  pdrop+='</optgroup>';
-  if(months.length){
-    pdrop+='<optgroup label="Monthly">';
-    months.forEach(function(m){pdrop+='<option value="month:'+m+'"'+(ST.period==='month'&&ST.month===m?' selected':'')+'>'+m+'</option>';});
-    pdrop+='</optgroup>';
-  }
-  pdrop+='<option value="custom"'+(ST.period==='custom'?' selected':'')+'>Custom Range</option>';
-  pdrop+='</select>';
-  h+=pdrop;
-
-  // Custom date inputs
-  if(ST.period==='custom'){
-    var di='background:#1e293b;border:1px solid #475569;border-radius:6px;color:#cbd5e1;font-size:12px;padding:4px 8px;cursor:pointer';
-    h+='<input type="date" value="'+ST.customFrom+'" onchange="setCustomFrom(this.value)" style="'+di+'">';
-    h+='<span style="color:#64748b;font-size:12px">–</span>';
-    h+='<input type="date" value="'+ST.customTo+'" onchange="setCustomTo(this.value)" style="'+di+'">';
-  }
+  h+='<button id="period-btn" onclick="togglePeriodPanel()" style="background:#0f172a;border:1px solid #475569;border-radius:8px;color:#cbd5e1;font-size:12px;padding:5px 14px;cursor:pointer;font-weight:500;white-space:nowrap">'+periodLabel()+' &#9660;</button>';
 
   h+='<span style="color:#334155;margin:0 4px">|</span>';
 
@@ -609,6 +595,109 @@ function makeHostChart(hd){
   CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return hcol(h.host);}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return (key==='gmv'||key==='gmvph')?fR(v):fN(v);}}})},plugins:{legend:{display:false}}}});
 }
 
+// ── PERIOD PANEL ───────────────────────────────────────────────────
+function periodLabel(){
+  if(ST.period==='today')return 'Today';
+  if(ST.period==='yesterday')return 'Yesterday';
+  if(ST.period==='last7')return 'Last 7 Days';
+  if(ST.period==='last30')return 'Last 30 Days';
+  if(ST.period==='month')return ST.month;
+  if(ST.period==='custom'&&ST.customFrom&&ST.customTo)return ST.customFrom.slice(5).replace('-','/')+' – '+ST.customTo.slice(5).replace('-','/');
+  return 'All Time';
+}
+function togglePeriodPanel(){PP.open=!PP.open;if(PP.open){PP.mode='';_renderPP();}else{document.getElementById('period-panel').style.display='none';}}
+function closePeriodPanel(){PP.open=false;document.getElementById('period-panel').style.display='none';}
+function ppSetMode(mode){
+  if(['all','today','yesterday','last7','last30'].indexOf(mode)>=0){
+    ST.period=mode;closePeriodPanel();render();return;
+  }
+  PP.mode=mode;
+  if(mode==='monthly'){PP.calYear=new Date().getFullYear();}
+  if(mode==='custom'){PP.s0=ST.customFrom||null;PP.s1=ST.customTo||null;PP.calYear=new Date().getFullYear();PP.calMonth=new Date().getMonth();}
+  _renderPP();
+}
+function ppYearPrev(){PP.calYear--;document.getElementById('pp-right').innerHTML=_renderMonthGrid();}
+function ppYearNext(){PP.calYear++;document.getElementById('pp-right').innerHTML=_renderMonthGrid();}
+function ppSelectMonth(m){ST.period='month';ST.month=m;closePeriodPanel();render();}
+function ppMonthPrev(){PP.calMonth--;if(PP.calMonth<0){PP.calMonth=11;PP.calYear--;}document.getElementById('pp-right').innerHTML=_renderCalGrid();}
+function ppMonthNext(){PP.calMonth++;if(PP.calMonth>11){PP.calMonth=0;PP.calYear++;}document.getElementById('pp-right').innerHTML=_renderCalGrid();}
+function ppSelectDate(d){
+  if(!PP.s0||PP.s1||d<PP.s0){PP.s0=d;PP.s1=null;}
+  else if(d>PP.s0){PP.s1=d;}
+  else{PP.s0=d;PP.s1=null;}
+  document.getElementById('pp-right').innerHTML=_renderCalGrid();
+}
+function ppApply(){
+  if(!PP.s0||!PP.s1)return;
+  ST.period='custom';ST.customFrom=PP.s0;ST.customTo=PP.s1;
+  closePeriodPanel();render();
+}
+function _renderMonthGrid(){
+  var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var nav='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
+    +'<button onclick="ppYearPrev()" style="background:transparent;border:1px solid #475569;border-radius:6px;color:#94a3b8;padding:4px 10px;cursor:pointer;font-size:15px">‹</button>'
+    +'<span style="color:#fff;font-weight:700;font-size:15px">'+PP.calYear+'</span>'
+    +'<button onclick="ppYearNext()" style="background:transparent;border:1px solid #475569;border-radius:6px;color:#94a3b8;padding:4px 10px;cursor:pointer;font-size:15px">›</button>'
+    +'</div>';
+  var grid='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+  MN.forEach(function(mn){
+    var val=mn+' '+PP.calYear;
+    var active=ST.period==='month'&&ST.month===val;
+    grid+='<button onclick="ppSelectMonth(\''+val+'\')" style="padding:10px 4px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid '+(active?'#6366f1':'#334155')+';background:'+(active?'rgba(99,102,241,.3)':'rgba(15,23,42,.8)')+';color:'+(active?'#a5b4fc':'#cbd5e1')+'">'+mn+'</button>';
+  });
+  grid+='</div>';
+  return nav+grid;
+}
+function _renderCalGrid(){
+  var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var y=PP.calYear,mo=PP.calMonth;
+  var dim=new Date(y,mo+1,0).getDate();
+  var sdow=(new Date(y,mo,1).getDay()+6)%7;
+  var nav='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+    +'<button onclick="ppMonthPrev()" style="background:transparent;border:1px solid #475569;border-radius:6px;color:#94a3b8;padding:4px 10px;cursor:pointer;font-size:15px">‹</button>'
+    +'<span style="color:#fff;font-weight:700">'+MN[mo]+' '+y+'</span>'
+    +'<button onclick="ppMonthNext()" style="background:transparent;border:1px solid #475569;border-radius:6px;color:#94a3b8;padding:4px 10px;cursor:pointer;font-size:15px">›</button>'
+    +'</div>';
+  var hdr='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:4px">';
+  ['M','T','W','T','F','S','S'].forEach(function(d){hdr+='<div style="text-align:center;font-size:11px;color:#475569;font-weight:600;padding:3px">'+d+'</div>';});
+  hdr+='</div>';
+  var cells='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px">';
+  for(var i=0;i<sdow;i++)cells+='<div></div>';
+  for(var dd=1;dd<=dim;dd++){
+    var ds=y+'-'+('0'+(mo+1)).slice(-2)+'-'+('0'+dd).slice(-2);
+    var isS=PP.s0===ds,isE=PP.s1===ds,inR=PP.s0&&PP.s1&&ds>PP.s0&&ds<PP.s1;
+    var bg=isS||isE?'#6366f1':inR?'rgba(99,102,241,.25)':'transparent';
+    var tc=isS||isE?'#fff':inR?'#a5b4fc':'#cbd5e1';
+    cells+='<button onclick="ppSelectDate(\''+ds+'\')" style="padding:5px 2px;border:none;border-radius:5px;background:'+bg+';color:'+tc+';font-size:12px;cursor:pointer;text-align:center">'+dd+'</button>';
+  }
+  cells+='</div>';
+  var info='<div style="margin-top:10px;font-size:12px;min-height:18px;color:#64748b">'
+    +(PP.s0?'<span style="color:#94a3b8">From:</span> <b style="color:#cbd5e1">'+PP.s0+'</b>  ':'')
+    +(PP.s1?'<span style="color:#94a3b8">To:</span> <b style="color:#cbd5e1">'+PP.s1+'</b>':'')
+    +'</div>';
+  var applyBtn=PP.s0&&PP.s1
+    ?'<div style="margin-top:10px;text-align:right"><button onclick="ppApply()" style="padding:7px 20px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:13px">Apply</button></div>'
+    :'<div style="margin-top:10px;font-size:12px;color:#475569">'+(PP.s0?'Now select end date':'Click a start date')+'</div>';
+  return nav+hdr+cells+info+applyBtn;
+}
+function _renderPP(){
+  var el=document.getElementById('period-panel');
+  if(!el)return;
+  var btn=document.getElementById('period-btn');
+  if(btn){var r=btn.getBoundingClientRect();el.style.top=(r.bottom+window.scrollY+4)+'px';el.style.left=Math.max(4,r.left+window.scrollX)+'px';}
+  var ITEMS=[['all','All Time'],['today','Today'],['yesterday','Yesterday'],['last7','Last 7 Days'],['last30','Last 30 Days'],['monthly','Monthly  ▸'],['custom','Custom Range  ▸']];
+  var sidebar='';
+  ITEMS.forEach(function(q){
+    var isAct=(PP.mode===q[0])||(!PP.mode&&ST.period===q[0])||(!PP.mode&&q[0]==='all'&&ST.period==='all');
+    sidebar+='<div onclick="ppSetMode(\''+q[0]+'\')" style="padding:9px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:'+(isAct?'#fff':'#94a3b8')+';background:'+(isAct?'rgba(99,102,241,.25)':'transparent')+'">'+q[1]+'</div>';
+  });
+  var right=PP.mode==='monthly'?_renderMonthGrid():PP.mode==='custom'?_renderCalGrid():'<p style="color:#475569;font-size:13px;padding-top:8px">Choose a preset or pick Monthly / Custom</p>';
+  el.innerHTML='<div style="display:flex">'
+    +'<div style="width:155px;border-right:1px solid #1e3a5f;padding:8px;flex-shrink:0">'+sidebar+'</div>'
+    +'<div id="pp-right" style="flex:1;padding:16px;min-width:260px">'+right+'</div>'
+    +'</div>';
+  el.style.display='block';
+}
 // ── EVENT HANDLERS ─────────────────────────────────────────────────
 function setPeriod(v){
   var m=v.match(/^month:(.+)/);
@@ -782,6 +871,13 @@ document.getElementById('root').innerHTML=
 +'</div>'
 +'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Live Stream Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
+
+// Close period panel when clicking outside
+document.addEventListener('click',function(e){
+  var panel=document.getElementById('period-panel');
+  var btn=document.getElementById('period-btn');
+  if(PP.open&&panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target))closePeriodPanel();
+});
 
 // Init: localStorage → shared data.json → demo
 (function doInit(){
