@@ -996,8 +996,14 @@ function processRowData(data,plat,done){
     else{var dm2=durRaw.match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
     var nm=String(nc&&r[nc]!=null?r[nc]:'');
     return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),platform:plat||'shopee',startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
-  }).filter(function(r){return r.gmv>0||r.viewers>0;});
+  }).filter(function(r){return r.gmv>0||r.viewers>0||r.orders>0||r.atc>0;});
   rows.forEach(function(r){r.ctr=r.viewers>0?r.uniqueClicks/r.viewers*100:0;r.ctor=r.uniqueClicks>0?r.orders/r.uniqueClicks*100:0;});
+  // Diagnostic: show column mapping when nothing was found
+  if(!rows.length&&data.length>0){
+    var sample=data[0]?JSON.stringify(data[0]).substring(0,400):'';
+    console.warn('No valid rows found.\nColumns:',keys,'\nGMV col:',gc,'Viewer col:',vc,'Date col:',stc,'\nFirst row sample:',sample);
+    alert('Could not read data from this file.\n\nColumns found in your file:\n'+keys.join(', ')+'\n\nMapped — Date: '+(stc||'NOT FOUND')+', GMV: '+(gc||'NOT FOUND')+', Viewers: '+(vc||'NOT FOUND')+'\n\nPlease screenshot this message and share it so the column names can be added.');
+  }
   if(rows.length){
     if(ST.isDemo){ST.raw=rows;ST.filesLoaded=1;}
     else{
