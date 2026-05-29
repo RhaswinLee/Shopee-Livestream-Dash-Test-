@@ -472,7 +472,7 @@ function tplSlots(sd){
 
 function tplHosts(hd){
   var mbtns='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"><span style="color:#64748b;font-size:12px;line-height:28px">Y-Axis:</span>'
-    +[['gmv','GMV'],['gmvph','GMV/Hour'],['vw','Viewers'],['atc','ATC'],['cl','Unique Clicks'],['or','Orders']].map(function(p){return pill(p[1],"setDeepMetric('"+p[0]+"')",ST.deepMetric===p[0]);}).join('')+'</div>';
+    +[['gmv','GMV'],['gmvph','GMV/Hour'],['vw','Viewers'],['atc','ATC'],['cl','Unique Clicks'],['or','Orders'],['hours','Total Hours']].map(function(p){return pill(p[1],"setDeepMetric('"+p[0]+"')",ST.deepMetric===p[0]);}).join('')+'</div>';
   var rows=hd.slice().sort(function(a,b){return b.gmv-a.gmv;}).map(function(h){
     var cc=h.ctr>15?'#34d399':h.ctr>8?'#fbbf24':'#f87171';
     var co=h.ctor>10?'#34d399':h.ctor>6?'#fbbf24':'#f87171';
@@ -767,7 +767,7 @@ function makeHostChart(hd){
   if(!c)return;
   var key=ST.deepMetric;
   var sorted=hd.slice().sort(function(a,b){return (b[key]||0)-(a[key]||0);});
-  CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return hcol(h.host);}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return (key==='gmv'||key==='gmvph')?fR(v):fN(v);}}})},plugins:{legend:{display:false}}}});
+  CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return hcol(h.host);}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return (key==='gmv'||key==='gmvph')?fR(v):key==='hours'?(Math.round(v)+'h'):fN(v);}}})},plugins:{legend:{display:false}}}});
 }
 
 // ── PERIOD PANEL ───────────────────────────────────────────────────
