@@ -7,7 +7,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#1e293b}
@@ -958,43 +958,42 @@ function handleFile(e){
 // Shared row processor — called by both CSV and Excel paths
 function processRowData(data,plat,done){
   if(!data||!data.length){if(done)done(0);return;}
-  var keys=Object.keys(data[0]);
-  // Strip BOM from first key if present
-  if(keys.length&&keys[0].charCodeAt(0)===0xFEFF){var clean=keys[0].slice(1);data=data.map(function(r){var n={};n[clean]=r[keys[0]];keys.slice(1).forEach(function(k){n[k]=r[k];});return n;});keys[0]=clean;}
-  function fc(als){return keys.find(function(k){return als.some(function(a){return String(k).toLowerCase().indexOf(a)>=0;});})||null;}
+  // Normalise keys: trim whitespace, strip BOM from first key
+  var rawKeys=Object.keys(data[0]);
+  var keys=rawKeys.map(function(k,i){var s=String(k).trim();return(i===0&&s.charCodeAt(0)===0xFEFF)?s.slice(1):s;});
+  // Rebuild data with clean keys if any changed
+  var keysChanged=keys.some(function(k,i){return k!==rawKeys[i];});
+  if(keysChanged)data=data.map(function(r){var n={};rawKeys.forEach(function(rk,i){n[keys[i]]=r[rk];});return n;});
+  function fc(als){return keys.find(function(k){return als.some(function(a){return k.toLowerCase().indexOf(a)>=0;});})||null;}
   var nc=fc(['livestream name','live title','stream title','live name','name','title','stream','nama']);
   var stc=fc(['start time','start date','live date','start waktu'])||fc(['date','tarikh']);
-  var drc=keys.find(function(k){var kl=String(k).toLowerCase();return (kl.indexOf('duration')>=0||kl.indexOf('live duration')>=0)&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
-  var vc=keys.find(function(k){var kl=String(k).toLowerCase();return (kl.indexOf('viewer')>=0||kl.indexOf('peak viewer')>=0)&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
-  var ac=keys.find(function(k){var kl=String(k).toLowerCase();return kl==='atc'||kl.indexOf('add to cart')>=0||kl.indexOf('product click')>=0;})||fc(['cart','atc']);
-  var cc=fc(['unique click','click','klik'])||keys.find(function(k){return String(k).toLowerCase().indexOf('engaged')>=0;})||null;
-  var oc=keys.find(function(k){var kl=String(k).toLowerCase();return (kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0)||(kl.indexOf('order')>=0&&kl.indexOf('gmv')<0&&kl.indexOf('revenue')<0&&kl.indexOf('amount')<0);})||fc(['order','pesanan']);
-  var gc=keys.find(function(k){var kl=String(k).toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv');})||fc(['gmv','revenue','sales','amount']);
+  var drc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('duration')>=0||kl.indexOf('live duration')>=0)&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
+  var vc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('viewer')>=0||kl.indexOf('peak viewer')>=0)&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
+  var ac=keys.find(function(k){var kl=k.toLowerCase();return kl==='atc'||kl.indexOf('add to cart')>=0||kl.indexOf('product click')>=0;})||fc(['cart','atc']);
+  var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
+  var oc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0)||(kl.indexOf('order')>=0&&kl.indexOf('gmv')<0&&kl.indexOf('revenue')<0&&kl.indexOf('amount')<0);})||fc(['order','pesanan']);
+  var gc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv');})||fc(['gmv','revenue','sales','amount']);
   var rows=data.map(function(r){
-    var rawDt=stc?r[stc]:'';
+    var rdt=String(stc&&r[stc]!=null?r[stc]:'');
     var ds='',sh=12,startStr='12:00';
-    if(rawDt instanceof Date){
-      // Excel date cell (cellDates:true)
-      ds=rawDt.getFullYear()+'-'+('0'+(rawDt.getMonth()+1)).slice(-2)+'-'+('0'+rawDt.getDate()).slice(-2);
-      sh=rawDt.getHours();startStr=('0'+sh).slice(-2)+':'+('0'+rawDt.getMinutes()).slice(-2);
-    } else {
-      var rdt=String(rawDt||'');
-      var dmDD=rdt.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-      var dmYY=rdt.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if(dmDD){ds=dmDD[3]+'-'+('0'+dmDD[2]).slice(-2)+'-'+('0'+dmDD[1]).slice(-2);}
-      else if(dmYY){ds=rdt.substring(0,10);}
-      else{ds=rdt;}
-      var tm=rdt.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
-      if(tm){sh=parseInt(tm[1]);startStr=('0'+tm[1]).slice(-2)+':'+tm[2];}
-    }
-    var durRaw=drc?r[drc]:'0',durMins=0;
-    if(durRaw instanceof Date){
-      durMins=durRaw.getHours()*60+durRaw.getMinutes()+durRaw.getSeconds()/60;
-    } else {
-      var dm3=String(durRaw).match(/(\d+):(\d+):(\d+)/);
-      if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
-      else{var dm2=String(durRaw).match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
-    }
+    // YYYY-MM-DD
+    var mYY=rdt.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    // DD-MM-YYYY or MM/DD/YYYY or DD/MM/YYYY
+    var mDM=rdt.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if(mYY){ds=rdt.substring(0,10);}
+    else if(mDM){
+      var a=parseInt(mDM[1]),b=parseInt(mDM[2]);
+      // if first number > 12 it must be day (DD/MM/YYYY); otherwise assume DD/MM/YYYY (Malaysia)
+      ds=mDM[3]+'-'+('0'+b).slice(-2)+'-'+('0'+a).slice(-2);
+      // if that gives invalid month (b>12), treat as MM/DD/YYYY
+      if(b>12)ds=mDM[3]+'-'+('0'+a).slice(-2)+'-'+('0'+b).slice(-2);
+    } else{ds=rdt;}
+    var tm=rdt.match(/(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?/i);
+    if(tm){sh=parseInt(tm[1]);if(tm[3]&&tm[3].toUpperCase()==='PM'&&sh<12)sh+=12;if(tm[3]&&tm[3].toUpperCase()==='AM'&&sh===12)sh=0;startStr=('0'+sh).slice(-2)+':'+tm[2];}
+    var durRaw=String(drc&&r[drc]!=null?r[drc]:'0'),durMins=0;
+    var dm3=durRaw.match(/(\d+):(\d+):(\d+)/);
+    if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
+    else{var dm2=durRaw.match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
     var nm=String(nc&&r[nc]!=null?r[nc]:'');
     return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),platform:plat||'shopee',startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
   }).filter(function(r){return r.gmv>0||r.viewers>0;});
@@ -1016,16 +1015,26 @@ function processRowData(data,plat,done){
 function parseOneCSV(f,plat,done){
   var ext=(f.name||'').split('.').pop().toLowerCase();
   if(ext==='xls'||ext==='xlsx'){
+    if(typeof XLSX==='undefined'){
+      alert('Excel library failed to load. Please refresh the page and try again, or use CSV format.');
+      if(done)done(0);return;
+    }
     var reader=new FileReader();
     reader.onload=function(e){
       try{
-        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
         var ws=wb.Sheets[wb.SheetNames[0]];
-        var data=XLSX.utils.sheet_to_json(ws,{raw:true,cellDates:true,defval:''});
+        // raw:false → all cells as display strings (same pipeline as CSV)
+        var data=XLSX.utils.sheet_to_json(ws,{raw:false,defval:''});
+        if(!data.length){alert('Excel file appears empty or has no header row on Sheet 1.');if(done)done(0);return;}
         processRowData(data,plat,done);
-      }catch(err){console.error('Excel parse error:',err);if(done)done(0);}
+      }catch(err){
+        console.error('Excel parse error:',err);
+        alert('Could not read Excel file: '+err.message+'\nTry File → Save As → .xlsx in Excel 2007+ and re-upload.');
+        if(done)done(0);
+      }
     };
-    reader.onerror=function(){if(done)done(0);};
+    reader.onerror=function(){alert('Could not read file.');if(done)done(0);};
     reader.readAsArrayBuffer(f);
   } else {
     Papa.parse(f,{header:true,skipEmptyLines:true,complete:function(res){
