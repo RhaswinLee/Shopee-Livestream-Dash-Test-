@@ -426,11 +426,15 @@ function renderKPIs(kpi){
 }
 
 function renderTabs(){
-  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis','schedule'];
-  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis','Schedule Planner'];
-  document.getElementById('tabnav').innerHTML=tabs.map(function(t,i){
+  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis'];
+  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis'];
+  var mainRow=tabs.map(function(t,i){
     return '<button class="tab-btn'+(ST.tab===t?' active':'')+'" onclick="setTab(\''+t+'\')">'+labels[i]+'</button>';
   }).join('');
+  // Schedule Planner sits in its own row below, visually separated
+  var schedBtn='<button class="tab-btn'+(ST.tab==='schedule'?' active':'')+'" onclick="setTab(\'schedule\')" '
+    +'style="background:'+(ST.tab==='schedule'?'rgba(99,102,241,.3)':'rgba(30,41,59,.6)')+';border:1px solid '+(ST.tab==='schedule'?'#818cf8':'#334155')+';color:'+(ST.tab==='schedule'?'#a5b4fc':'#64748b')+';font-weight:600;padding:6px 20px;border-radius:8px;font-size:13px;cursor:pointer">📅 Schedule Planner</button>';
+  document.getElementById('tabnav').innerHTML=mainRow+'<div style="width:100%;height:1px;background:rgba(51,65,85,.5);margin:6px 0"></div>'+schedBtn;
 }
 
 function renderPanel(f,kpi,hd,sd){
@@ -884,28 +888,21 @@ function tplSchedule(f){
     var tc=active?(p[0]==='shopee'?'#ff6b4a':p[0]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
     return '<button onclick="setSchedPlatform(\''+p[0]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[1]+'</button>';
   }).join('');
-  var ctrl='<div style="display:flex;flex-direction:column;gap:10px">'
-    // Row 1: Basis
-    +'<div style="display:flex;align-items:center;gap:8px">'
-      +'<span style="color:#64748b;font-size:12px;min-width:52px">Basis:</span>'
-      +pill('Last Month',"setSchedBasis('month1')",ST.schedBasis==='month1')
-      +pill('Last 3 Months',"setSchedBasis('month3')",ST.schedBasis==='month3')
-    +'</div>'
-    // Row 2: Platform + same-hosts toggle
-    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      +'<span style="color:#64748b;font-size:12px;min-width:52px">Platform:</span>'
-      +platBtns
-      +(ST.schedPlatform==='both'
-        ?'<span style="color:#334155;margin:0 4px">|</span>'
-         +'<button onclick="setSchedSameHosts('+(!ST.schedSameHosts)+')" style="padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid '+(ST.schedSameHosts?'#34d399':'#475569')+';background:'+(ST.schedSameHosts?'rgba(52,211,153,.15)':'transparent')+';color:'+(ST.schedSameHosts?'#34d399':'#64748b')+'">Same hosts for both</button>'
-        :'')
-    +'</div>'
-    // Row 3: Target month + export
-    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      +'<span style="color:#64748b;font-size:12px;min-width:52px">Month:</span>'
-      +'<select style="'+dSty+'" onchange="setSchedTargetMonth(this.value)">'+tOptHtml+'</select>'
-      +'<button onclick="exportSchedule()" style="padding:5px 16px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:8px;color:#34d399;font-size:12px;font-weight:600;cursor:pointer">⬇ Download Schedule (.xlsx)</button>'
-    +'</div>'
+  var ctrl='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">'
+    +'<span style="color:#64748b;font-size:12px">Basis:</span>'
+    +pill('Last Month',"setSchedBasis('month1')",ST.schedBasis==='month1')
+    +pill('Last 3 Months',"setSchedBasis('month3')",ST.schedBasis==='month3')
+    +'<span style="color:#334155;margin:0 4px">|</span>'
+    +'<span style="color:#64748b;font-size:12px">Platform:</span>'
+    +platBtns
+    +(ST.schedPlatform==='both'
+      ?'<span style="color:#334155;margin:0 4px">|</span>'
+       +'<button onclick="setSchedSameHosts('+(!ST.schedSameHosts)+')" style="padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid '+(ST.schedSameHosts?'#34d399':'#475569')+';background:'+(ST.schedSameHosts?'rgba(52,211,153,.15)':'transparent')+';color:'+(ST.schedSameHosts?'#34d399':'#64748b')+'">Same hosts for both</button>'
+      :'')
+    +'<span style="color:#334155;margin:0 4px">|</span>'
+    +'<span style="color:#64748b;font-size:12px">Month:</span>'
+    +'<select style="'+dSty+'" onchange="setSchedTargetMonth(this.value)">'+tOptHtml+'</select>'
+    +'<button onclick="exportSchedule()" style="padding:5px 16px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:8px;color:#34d399;font-size:12px;font-weight:600;cursor:pointer">⬇ Download Schedule (.xlsx)</button>'
     +'</div>';
 
   // Legend
