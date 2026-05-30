@@ -361,9 +361,10 @@ function renderFilters(){
   msrc.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;mset.push(r.month);}});
   var months=sortMonths(mset);
 
-  var h='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
+  var h='<div style="display:flex;flex-direction:column;gap:8px">';
 
-  // Platform pills
+  // Row 1: Platform + Period
+  h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
   h+='<span style="color:#64748b;font-size:12px">Platform:</span>';
   [['All','All'],['Shopee','shopee'],['TikTok','tiktok']].forEach(function(p){
     var active=ST.platform===p[1];
@@ -372,16 +373,13 @@ function renderFilters(){
     var tc=active?(p[1]==='shopee'?'#ff6b4a':p[1]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
     h+='<button onclick="setPlatform(\''+p[1]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[0]+'</button>';
   });
-
   h+='<span style="color:#334155;margin:0 4px">|</span>';
-
-  // Period button → opens floating panel
   h+='<span style="color:#64748b;font-size:12px">Period:</span>';
   h+='<button id="period-btn" onclick="togglePeriodPanel()" style="background:#0f172a;border:1px solid #475569;border-radius:8px;color:#cbd5e1;font-size:12px;padding:5px 14px;cursor:pointer;font-weight:500;white-space:nowrap">'+periodLabel()+' &#9660;</button>';
+  h+='</div>';
 
-  h+='<span style="color:#334155;margin:0 4px">|</span>';
-
-  // Host dropdown
+  // Row 2: Host dropdown + file count
+  h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">';
   h+='<span style="color:#64748b;font-size:12px">Host:</span>';
   var hosts=getUniqueHosts();
   var opts='<option value="">All Hosts</option>';
@@ -389,11 +387,12 @@ function renderFilters(){
     opts+='<option value="'+hh+'"'+(ST.hostSel===hh?' selected':'')+' style="color:'+hcol(hh)+';font-weight:600">'+hh+'</option>';
   });
   h+='<select class="hsel" onchange="setHostSel(this.value)">'+opts+'</select>';
-
   if(!ST.isDemo){
     h+='<span style="color:#334155;margin:0 4px">|</span>';
     h+='<span style="font-size:12px;color:#64748b">'+ST.filesLoaded+' file'+(ST.filesLoaded!==1?'s':'')+' · '+ST.raw.length+' sessions</span>';
   }
+  h+='</div>';
+
   h+='</div>';
   document.getElementById('filters').innerHTML=h;
 }
@@ -788,7 +787,23 @@ function tplSchedule(f){
     var g=[];
     for(var d=1;d<=dIM;d++){
       var dow=new Date(tYear,tMon,d).getDay();
-      g.push({d:d,dow:dow,hosts:HOURS.map(function(h){return getBest(mp,h,dow);})});
+      // Get raw best host per hour
+      var raw=HOURS.map(function(h){return getBest(mp,h,dow);});
+      // Enforce minimum 2-hour blocks: pair up consecutive slots
+      var blocked=raw.slice();
+      for(var i=0;i<blocked.length-1;i+=2){
+        // For each pair, use whichever of the two has a better score (prefer first if equal)
+        var h0=HOURS[i],h1=HOURS[i+1];
+        var host=blocked[i]||blocked[i+1];
+        // If both slots have different recommendations, pick the one with more historical sessions
+        if(blocked[i]&&blocked[i+1]&&blocked[i]!==blocked[i+1]){
+          var s0=(mp[h0]&&mp[h0][blocked[i]]?mp[h0][blocked[i]].s:0);
+          var s1=(mp[h1]&&mp[h1][blocked[i+1]]?mp[h1][blocked[i+1]].s:0);
+          host=s0>=s1?blocked[i]:blocked[i+1];
+        }
+        blocked[i]=host;blocked[i+1]=host;
+      }
+      g.push({d:d,dow:dow,hosts:blocked});
     }
     return g;
   }
