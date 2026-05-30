@@ -345,6 +345,7 @@ function render(){
   renderKPIs(kpi);
   renderTabs();
   renderPanel(f,kpi,hd,sd);
+  renderScheduleSection(f);
 }
 
 function getUniqueHosts(){
@@ -428,13 +429,9 @@ function renderKPIs(kpi){
 function renderTabs(){
   var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis'];
   var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis'];
-  var mainRow=tabs.map(function(t,i){
+  document.getElementById('tabnav').innerHTML=tabs.map(function(t,i){
     return '<button class="tab-btn'+(ST.tab===t?' active':'')+'" onclick="setTab(\''+t+'\')">'+labels[i]+'</button>';
   }).join('');
-  // Schedule Planner sits in its own row below, visually separated
-  var schedBtn='<button class="tab-btn'+(ST.tab==='schedule'?' active':'')+'" onclick="setTab(\'schedule\')" '
-    +'style="background:'+(ST.tab==='schedule'?'rgba(99,102,241,.3)':'rgba(30,41,59,.6)')+';border:1px solid '+(ST.tab==='schedule'?'#818cf8':'#334155')+';color:'+(ST.tab==='schedule'?'#a5b4fc':'#64748b')+';font-weight:600;padding:6px 20px;border-radius:8px;font-size:13px;cursor:pointer">📅 Schedule Planner</button>';
-  document.getElementById('tabnav').innerHTML=mainRow+'<div style="width:100%;height:1px;background:rgba(51,65,85,.5);margin:6px 0"></div>'+schedBtn;
 }
 
 function renderPanel(f,kpi,hd,sd){
@@ -448,7 +445,6 @@ function renderPanel(f,kpi,hd,sd){
   else if(ST.tab==='league') el.innerHTML=tplLeague(hd);
   else if(ST.tab==='hotspot') el.innerHTML=tplHotspot();
   else if(ST.tab==='analysis') el.innerHTML=tplAnalysis(f,hd);
-  else if(ST.tab==='schedule') el.innerHTML=tplSchedule(f);
   // create charts after DOM insert
   if(ST.tab==='overview') makeOverviewCharts(hd);
   else if(ST.tab==='timeslots') makeSlotChart(sd);
@@ -987,6 +983,31 @@ function makeHostChart(hd){
   CHS.deep=new Chart(c,{type:'bar',data:{labels:sorted.map(function(h){return h.host;}),datasets:[{label:key.toUpperCase(),data:sorted.map(function(h){return h[key]||0;}),backgroundColor:sorted.map(function(h){return hcol(h.host);}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:AX,y:Object.assign({},AY,{ticks:{color:'#94a3b8',font:{size:10},callback:function(v){return (key==='gmv'||key==='gmvph')?fR(v):key==='hours'?(Math.round(v)+'h'):fN(v);}}})},plugins:{legend:{display:false}}}});
 }
 
+// ── SCHEDULE SECTION (standalone, always rendered at page bottom) ──
+function renderScheduleSection(f){
+  var el=document.getElementById('schedule-section');
+  if(!el)return;
+  var banner='<div style="max-width:1280px;margin:0 auto">'
+    +'<div style="display:flex;align-items:center;gap:0;margin-bottom:24px;margin-top:8px">'
+      +'<div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,#334155)"></div>'
+      +'<div style="padding:0 24px;text-align:center;white-space:nowrap">'
+        +'<span style="font-size:11px;font-weight:700;color:#4f46e5;letter-spacing:.12em;text-transform:uppercase">Section 10</span>'
+      +'</div>'
+      +'<div style="flex:1;height:2px;background:linear-gradient(90deg,#334155,transparent)"></div>'
+    +'</div>'
+    +'<div style="background:linear-gradient(135deg,rgba(79,70,229,.18),rgba(139,92,246,.12));border:1px solid rgba(99,102,241,.35);border-radius:16px;padding:20px 28px;margin-bottom:24px">'
+      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+        +'<div style="width:4px;height:36px;background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:2px;flex-shrink:0"></div>'
+        +'<div>'
+          +'<h2 style="font-size:20px;font-weight:700;color:#fff;margin:0 0 3px">📅 Monthly Streaming Schedule Planner</h2>'
+          +'<p style="font-size:12px;color:#94a3b8;margin:0">AI-recommended host assignments based on historical GMV · CTR · CTOR · session frequency per time slot</p>'
+        +'</div>'
+      +'</div>'
+    +'</div>'
+  +'</div>';
+  // tplSchedule renders at full available width (overflow-x:auto on tables)
+  el.innerHTML=banner+'<div style="max-width:1600px;margin:0 auto">'+tplSchedule(f)+'</div>';
+}
 // ── PERIOD PANEL ───────────────────────────────────────────────────
 function periodLabel(){
   if(ST.period==='today')return 'Today';
@@ -1349,6 +1370,8 @@ document.getElementById('root').innerHTML=
 +'<div id="tabnav" style="background:rgba(30,41,59,.6);border-radius:12px;border:1px solid #334155;padding:6px;display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px"></div>'
 +'<div id="panel"></div>'
 +'</div>'
+// Schedule Planner — full-width standalone section, no max-width cap on table scroll
++'<div id="schedule-section" style="padding:0 16px 40px"></div>'
 +'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Live Stream Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
 
