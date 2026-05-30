@@ -118,6 +118,7 @@ var ST = {
 };
 var CHS = {}; // chart instances
 var PP={open:false,mode:'',calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),s0:null,s1:null};
+var _SCHED={gShopee:null,gTiktok:null,gBoth:null,HLBLS:null,dIM:0,tMon:0,tYear:0};
 
 // ── UTILITIES ──────────────────────────────────────────────────────
 // Dynamic colour palette for hosts beyond the preset 6
@@ -809,6 +810,9 @@ function tplSchedule(f){
   }
 
   var gShopee=makeGrid(mapShopee),gTiktok=makeGrid(mapTiktok),gBoth=makeGrid(mapAll);
+  // Store for export function
+  _SCHED.gShopee=gShopee;_SCHED.gTiktok=gTiktok;_SCHED.gBoth=gBoth;
+  _SCHED.HLBLS=HLBLS;_SCHED.dIM=dIM;_SCHED.tMon=tMon;_SCHED.tYear=tYear;
 
   function renderTable(grid,title){
     var mo=('0'+(tMon+1)).slice(-2);
@@ -871,28 +875,37 @@ function tplSchedule(f){
   }
 
   // Controls
-  var dSty='background:transparent;border:1px solid #475569;border-radius:6px;color:#cbd5e1;font-size:12px;padding:4px 8px;cursor:pointer';
+  var dSty='background:#0f172a;border:1px solid #475569;border-radius:6px;color:#cbd5e1;font-size:12px;padding:4px 10px;cursor:pointer';
   var tOptHtml=tOpts.map(function(o){return '<option value="'+o+'"'+(ST.schedTargetMonth===o?' selected':'')+'>'+o+'</option>';}).join('');
-  var ctrl='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px">'
-    +'<span style="color:#64748b;font-size:12px">Basis:</span>'
-    +pill('Last Month',"setSchedBasis('month1')",ST.schedBasis==='month1')
-    +pill('Last 3 Months',"setSchedBasis('month3')",ST.schedBasis==='month3')
-    +'<span style="color:#334155;margin:0 2px">|</span>'
-    +'<span style="color:#64748b;font-size:12px">Platform:</span>'
-    +[['shopee','Shopee'],['tiktok','TikTok'],['both','Both']].map(function(p){
-      var active=ST.schedPlatform===p[0];
-      var bc=active?(p[0]==='shopee'?'#ee4d2d':p[0]==='tiktok'?'#69c9d0':'#818cf8'):'#475569';
-      var bg=active?(p[0]==='shopee'?'rgba(238,77,45,.2)':p[0]==='tiktok'?'rgba(105,201,208,.15)':'rgba(129,140,248,.2)'):'transparent';
-      var tc=active?(p[0]==='shopee'?'#ff6b4a':p[0]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
-      return '<button onclick="setSchedPlatform(\''+p[0]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[1]+'</button>';
-    }).join('')
-    +'<span style="color:#334155;margin:0 2px">|</span>'
-    +'<span style="color:#64748b;font-size:12px">For:</span>'
-    +'<select style="'+dSty+'" onchange="setSchedTargetMonth(this.value)">'+tOptHtml+'</select>'
-    +(ST.schedPlatform==='both'
-      ?'<span style="color:#334155;margin:0 2px">|</span>'
-       +'<button onclick="setSchedSameHosts('+(!ST.schedSameHosts)+')" style="padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid '+(ST.schedSameHosts?'#34d399':'#475569')+';background:'+(ST.schedSameHosts?'rgba(52,211,153,.15)':'transparent')+';color:'+(ST.schedSameHosts?'#34d399':'#64748b')+'">Same hosts for both</button>'
-      :'')
+  var platBtns=[['shopee','Shopee'],['tiktok','TikTok'],['both','Both']].map(function(p){
+    var active=ST.schedPlatform===p[0];
+    var bc=active?(p[0]==='shopee'?'#ee4d2d':p[0]==='tiktok'?'#69c9d0':'#818cf8'):'#475569';
+    var bg=active?(p[0]==='shopee'?'rgba(238,77,45,.2)':p[0]==='tiktok'?'rgba(105,201,208,.15)':'rgba(129,140,248,.2)'):'transparent';
+    var tc=active?(p[0]==='shopee'?'#ff6b4a':p[0]==='tiktok'?'#69c9d0':'#a5b4fc'):'#64748b';
+    return '<button onclick="setSchedPlatform(\''+p[0]+'\')" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid '+bc+';background:'+bg+';color:'+tc+'">'+p[1]+'</button>';
+  }).join('');
+  var ctrl='<div style="display:flex;flex-direction:column;gap:10px">'
+    // Row 1: Basis
+    +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span style="color:#64748b;font-size:12px;min-width:52px">Basis:</span>'
+      +pill('Last Month',"setSchedBasis('month1')",ST.schedBasis==='month1')
+      +pill('Last 3 Months',"setSchedBasis('month3')",ST.schedBasis==='month3')
+    +'</div>'
+    // Row 2: Platform + same-hosts toggle
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<span style="color:#64748b;font-size:12px;min-width:52px">Platform:</span>'
+      +platBtns
+      +(ST.schedPlatform==='both'
+        ?'<span style="color:#334155;margin:0 4px">|</span>'
+         +'<button onclick="setSchedSameHosts('+(!ST.schedSameHosts)+')" style="padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid '+(ST.schedSameHosts?'#34d399':'#475569')+';background:'+(ST.schedSameHosts?'rgba(52,211,153,.15)':'transparent')+';color:'+(ST.schedSameHosts?'#34d399':'#64748b')+'">Same hosts for both</button>'
+        :'')
+    +'</div>'
+    // Row 3: Target month + export
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<span style="color:#64748b;font-size:12px;min-width:52px">Month:</span>'
+      +'<select style="'+dSty+'" onchange="setSchedTargetMonth(this.value)">'+tOptHtml+'</select>'
+      +'<button onclick="exportSchedule()" style="padding:5px 16px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:8px;color:#34d399;font-size:12px;font-weight:600;cursor:pointer">⬇ Download Schedule (.xlsx)</button>'
+    +'</div>'
     +'</div>';
 
   // Legend
@@ -1110,6 +1123,39 @@ function setSchedBasis(b){ST.schedBasis=b;render();}
 function setSchedPlatform(p){ST.schedPlatform=p;render();}
 function setSchedTargetMonth(m){ST.schedTargetMonth=m;render();}
 function setSchedSameHosts(v){ST.schedSameHosts=v;render();}
+function exportSchedule(){
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Refresh the page.');return;}
+  var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var dIM=_SCHED.dIM,tMon=_SCHED.tMon,tYear=_SCHED.tYear,HLBLS=_SCHED.HLBLS;
+  if(!dIM||!HLBLS){alert('Open the Schedule Planner tab first to generate the schedule.');return;}
+  var mo=('0'+(tMon+1)).slice(-2);
+  function gridToAOA(grid,sheetTitle){
+    var header=[sheetTitle];
+    for(var d=1;d<=dIM;d++){var dow=new Date(tYear,tMon,d).getDay();header.push(DOW[dow]+' '+d+'/'+mo);}
+    var rows=[header];
+    HLBLS.forEach(function(lbl,i){
+      var row=[lbl];
+      grid.forEach(function(day){row.push(day.hosts[i]||'');});
+      rows.push(row);
+    });
+    return rows;
+  }
+  var wb=XLSX.utils.book_new();
+  var addSheet=function(grid,name){
+    if(!grid)return;
+    var ws=XLSX.utils.aoa_to_sheet(gridToAOA(grid,name));
+    ws['!cols']=[{wch:7}];for(var i=0;i<dIM;i++)ws['!cols'].push({wch:10});
+    XLSX.utils.book_append_sheet(wb,ws,name);
+  };
+  if(ST.schedPlatform==='shopee'||ST.schedPlatform==='both'){
+    addSheet(ST.schedSameHosts&&ST.schedPlatform==='both'?_SCHED.gBoth:_SCHED.gShopee,'Shopee MY');
+  }
+  if(ST.schedPlatform==='tiktok'||ST.schedPlatform==='both'){
+    addSheet(ST.schedSameHosts&&ST.schedPlatform==='both'?_SCHED.gBoth:_SCHED.gTiktok,'TikTok MY');
+  }
+  if(!wb.SheetNames||!wb.SheetNames.length){alert('No schedule data to export.');return;}
+  XLSX.writeFile(wb,'LiveSchedule_'+ST.schedTargetMonth.replace(' ','_')+'.xlsx');
+}
 function setAnalysisCustFrom(v){ST.analysisCustFrom=Math.max(0,Math.min(23,v||0));render();}
 function setAnalysisCustTo(v){ST.analysisCustTo=Math.max(0,Math.min(23,v||23));render();}
 function clearData(){
