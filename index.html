@@ -727,7 +727,7 @@ function tplSchedule(f){
   var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var HOURS=[7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2];
-  var HLBLS=['7AM','8AM','9AM','10AM','11AM','12PM','1PM','2PM','3PM','4PM','5PM','6PM','7PM','8PM','9PM','10PM','11PM','12AM','1AM','2AM'];
+  var HLBLS=['7AM-8AM','8AM-9AM','9AM-10AM','10AM-11AM','11AM-12PM','12PM-1PM','1PM-2PM','2PM-3PM','3PM-4PM','4PM-5PM','5PM-6PM','6PM-7PM','7PM-8PM','8PM-9PM','9PM-10PM','10PM-11PM','11PM-12AM','12AM-1AM','1AM-2AM','2AM-3AM'];
 
   // Auto-set target month from latest data
   var allDates=(ST.raw||[]).map(function(r){return r.date;}).filter(Boolean).sort();
@@ -1143,26 +1143,62 @@ function setSchedTargetMonth(m){ST.schedTargetMonth=m;render();}
 function setSchedSameHosts(v){ST.schedSameHosts=v;render();}
 function exportSchedule(){
   if(typeof XLSX==='undefined'){alert('Excel library not loaded. Refresh the page.');return;}
-  var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var DOW_FULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var dIM=_SCHED.dIM,tMon=_SCHED.tMon,tYear=_SCHED.tYear,HLBLS=_SCHED.HLBLS;
-  if(!dIM||!HLBLS){alert('Open the Schedule Planner tab first to generate the schedule.');return;}
+  if(!dIM||!HLBLS){alert('Scroll down to the Schedule Planner section first so the schedule is generated.');return;}
   var mo=('0'+(tMon+1)).slice(-2);
-  function gridToAOA(grid,sheetTitle){
-    var header=[sheetTitle];
-    for(var d=1;d<=dIM;d++){var dow=new Date(tYear,tMon,d).getDay();header.push(DOW[dow]+' '+d+'/'+mo);}
-    var rows=[header];
-    HLBLS.forEach(function(lbl,i){
-      var row=[lbl];
-      grid.forEach(function(day){row.push(day.hosts[i]||'');});
-      rows.push(row);
+  var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Split grid days into Mon-Sun weeks
+  function splitWeeks(grid){
+    var weeks=[],cur=[];
+    grid.forEach(function(day){
+      cur.push(day);
+      // End week on Sunday (dow=0) or last day
+      if(day.dow===0||day.d===dIM){weeks.push(cur);cur=[];}
     });
-    return rows;
+    if(cur.length)weeks.push(cur);
+    return weeks;
   }
+
+  // Build AOA with weekly blocks stacked vertically (matching reference image)
+  function gridToWeeklyAOA(grid,sheetTitle){
+    var weeks=splitWeeks(grid);
+    var aoa=[];
+    // Sheet title row
+    aoa.push([sheetTitle+' — '+MN[tMon]+' '+tYear]);
+    aoa.push([]); // blank row
+
+    weeks.forEach(function(week,wi){
+      if(wi>0)aoa.push([]); // gap between weeks
+
+      // Row 1: date numbers  e.g. '' | 1/06 | 2/06 ...
+      var dateRow=[''];
+      week.forEach(function(d){dateRow.push(d.d+'/'+mo);});
+      aoa.push(dateRow);
+
+      // Row 2: day names  e.g. '' | Monday | Tuesday ...
+      var dayRow=[''];
+      week.forEach(function(d){dayRow.push(DOW_FULL[d.dow]);});
+      aoa.push(dayRow);
+
+      // Time slot rows
+      HLBLS.forEach(function(lbl,i){
+        var row=[lbl];
+        week.forEach(function(day){row.push(day.hosts[i]||'');});
+        aoa.push(row);
+      });
+    });
+    return aoa;
+  }
+
   var wb=XLSX.utils.book_new();
   var addSheet=function(grid,name){
     if(!grid)return;
-    var ws=XLSX.utils.aoa_to_sheet(gridToAOA(grid,name));
-    ws['!cols']=[{wch:7}];for(var i=0;i<dIM;i++)ws['!cols'].push({wch:10});
+    var aoa=gridToWeeklyAOA(grid,name);
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    // Column widths: time col + 7 day cols
+    ws['!cols']=[{wch:11},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12}];
     XLSX.utils.book_append_sheet(wb,ws,name);
   };
   if(ST.schedPlatform==='shopee'||ST.schedPlatform==='both'){
