@@ -1324,14 +1324,14 @@ function processRowData(data,plat,done){
   var keysChanged=keys.some(function(k,i){return k!==rawKeys[i];});
   if(keysChanged)data=data.map(function(r){var n={};rawKeys.forEach(function(rk,i){n[keys[i]]=r[rk];});return n;});
   function fc(als){return keys.find(function(k){return als.some(function(a){return k.toLowerCase().indexOf(a)>=0;});})||null;}
-  var nc=fc(['livestream name','live title','stream title','live name','name','title','stream','nama']);
-  var stc=fc(['start time','start date','live date','start waktu'])||fc(['date','tarikh']);
+  var nc=fc(['livestream name','live video name','live title','stream title','live name','name','title','stream','nama']);
+  var stc=fc(['start time','start date','live date','live start','start waktu'])||fc(['date','tarikh']);
   var drc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('duration')>=0||kl.indexOf('live duration')>=0)&&kl.indexOf('avg')<0;})||fc(['dur','tempoh']);
-  var vc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('viewer')>=0||kl.indexOf('peak viewer')>=0)&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
-  var ac=keys.find(function(k){var kl=k.toLowerCase();return kl==='atc'||kl.indexOf('add to cart')>=0||kl.indexOf('product click')>=0;})||fc(['cart','atc']);
+  var vc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('viewer')>=0||kl.indexOf('peak viewer')>=0||kl.indexOf('total view')>=0||kl.indexOf('unique view')>=0)&&kl.indexOf('engaged')<0;})||fc(['penonton','views']);
+  var ac=keys.find(function(k){var kl=k.toLowerCase();return kl==='atc'||kl.indexOf('add to cart')>=0||kl.indexOf('add-to-cart')>=0||kl.indexOf('product click')>=0;})||fc(['cart','atc']);
   var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
   var oc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0)||(kl.indexOf('order')>=0&&kl.indexOf('gmv')<0&&kl.indexOf('revenue')<0&&kl.indexOf('amount')<0);})||fc(['order','pesanan']);
-  var gc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv');})||fc(['gmv','revenue','sales','amount']);
+  var gc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv')||(kl.indexOf('gmv')>=0&&kl.indexOf('usd')>=0)||(kl.indexOf('product revenue')>=0);})||fc(['gmv','revenue','sales','amount']);
   var rows=data.map(function(r){
     var rdt=String(stc&&r[stc]!=null?r[stc]:'');
     var ds='',sh=12,startStr='12:00';
@@ -1402,8 +1402,25 @@ function parseOneCSV(f,plat,done){
     reader.onerror=function(){alert('Could not read file.');if(done)done(0);};
     reader.readAsArrayBuffer(f);
   } else {
-    Papa.parse(f,{header:true,skipEmptyLines:true,complete:function(res){
-      processRowData(res.data,plat,done);
+    // Parse raw (no header) so we can skip TikTok metadata rows at top
+    Papa.parse(f,{header:false,skipEmptyLines:true,complete:function(res){
+      var rawRows=res.data;
+      if(!rawRows.length){if(done)done(0);return;}
+      // Find the real header row — skip metadata lines (e.g. "Date Range: ...", "Report Period: ...")
+      var hIdx=0;
+      for(var i=0;i<Math.min(8,rawRows.length);i++){
+        var firstCell=String(rawRows[i][0]||'').trim().toLowerCase();
+        var nonEmpty=rawRows[i].filter(function(c){return String(c).trim();}).length;
+        if(nonEmpty<2||firstCell.indexOf('date range')>=0||firstCell.indexOf('report period')>=0||firstCell.indexOf('report date')>=0||firstCell===''){ continue; }
+        hIdx=i; break;
+      }
+      var headers=rawRows[hIdx].map(function(h){return String(h||'').trim();});
+      var dataRows=rawRows.slice(hIdx+1).map(function(row){
+        var obj={};
+        headers.forEach(function(h,i){obj[h]=row[i]!==undefined?row[i]:'';});
+        return obj;
+      });
+      processRowData(dataRows,plat,done);
     }});
   }
 }
