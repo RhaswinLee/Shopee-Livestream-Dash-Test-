@@ -72,8 +72,12 @@ tr:hover td{background:rgba(51,65,85,.3)}
         4. Vercel redeploys in ~1 min — all visitors will see your data
       </div>
     </div>
-    <div id="modal-clear-wrap" style="display:none;margin-top:12px;text-align:center">
-      <button onclick="if(confirm('Clear all uploaded data and return to demo mode?'))clearData();" style="background:none;border:none;color:#64748b;font-size:12px;cursor:pointer;text-decoration:underline">Clear all uploaded data &amp; reset to demo</button>
+    <div id="modal-clear-wrap" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid rgba(71,85,105,.4)">
+      <p style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:8px">Manage Uploaded Data</p>
+      <div id="modal-platform-summary" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div style="text-align:center;margin-top:10px">
+        <button onclick="if(confirm('Remove ALL data from both platforms and return to demo?'))clearData();" style="background:none;border:none;color:#475569;font-size:11px;cursor:pointer;text-decoration:underline">Reset all &amp; return to demo</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1265,6 +1269,20 @@ function clearData(){
   ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';
   try{localStorage.removeItem('shopee_live');}catch(e){}
   render();
+  var cw=document.getElementById('modal-clear-wrap');
+  if(cw)cw.style.display='none';
+  var ew=document.getElementById('modal-export-wrap');
+  if(ew)ew.style.display='none';
+  var hint=document.getElementById('modal-hint');
+  if(hint)hint.innerHTML='Select one or more CSV files — you can upload all months at once.';
+}
+function clearPlatformData(plat){
+  var label=plat==='shopee'?'Shopee':'TikTok';
+  if(!confirm('Remove all '+label+' data? This cannot be undone.'))return;
+  ST.raw=ST.raw.filter(function(r){return(r.platform||'shopee')!==plat;});
+  if(!ST.raw.length){ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';}
+  else{ST.isDemo=false;ST.month='All';}
+  saveToStorage();render();openModal();
 }
 
 // ── STORAGE ────────────────────────────────────────────────────────
@@ -1301,6 +1319,27 @@ function openModal(){
   if(ew)ew.style.display=ST.isDemo?'none':'block';
   var cw=document.getElementById('modal-clear-wrap');
   if(cw)cw.style.display=ST.isDemo?'none':'block';
+  // Build per-platform summary for manage section
+  if(!ST.isDemo){
+    var ps=document.getElementById('modal-platform-summary');
+    if(ps){
+      var PLATS=[{id:'shopee',label:'Shopee',color:'#ff6b4a',border:'rgba(238,77,45,.35)',bg:'rgba(238,77,45,.1)'},{id:'tiktok',label:'TikTok',color:'#69c9d0',border:'rgba(105,201,208,.35)',bg:'rgba(105,201,208,.1)'}];
+      ps.innerHTML=PLATS.map(function(p){
+        var rows=ST.raw.filter(function(r){return(r.platform||'shopee')===p.id;});
+        if(!rows.length)return'';
+        var months=rows.map(function(r){return r.month||'';}).filter(Boolean);
+        var sorted=months.slice().sort();
+        var range=sorted.length?(sorted[0]===sorted[sorted.length-1]?sorted[0]:sorted[0]+' – '+sorted[sorted.length-1]):'';
+        return'<div style="display:flex;align-items:center;justify-content:space-between;background:'+p.bg+';border:1px solid '+p.border+';border-radius:8px;padding:8px 12px">'
+          +'<div>'
+          +'<div style="font-size:12px;font-weight:700;color:'+p.color+'">'+p.label+'</div>'
+          +'<div style="font-size:11px;color:#64748b;margin-top:1px">'+rows.length+' sessions'+(range?' · '+range:'')+'</div>'
+          +'</div>'
+          +'<button onclick="clearPlatformData(\''+p.id+'\')" style="padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid '+p.border+';background:rgba(239,68,68,.15);color:#f87171">Remove</button>'
+          +'</div>';
+      }).join('');
+    }
+  }
   document.getElementById('modal').style.display='flex';
 }
 function closeModal(){document.getElementById('modal').style.display='none';}
