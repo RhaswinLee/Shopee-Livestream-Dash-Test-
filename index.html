@@ -7,7 +7,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx-js-style.min.js"></script>
 <style>
 body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#1e293b}
@@ -779,6 +779,20 @@ function tplSchedule(f){
     cands.sort(function(a,b){return b.avg-a.avg;});
     return cands.slice(0,3).map(function(c){return c.h;});
   }
+  function getTop3ForRange(mp,hoursArr){
+    var agg={};
+    hoursArr.forEach(function(h){
+      var hd=mp[h];if(!hd)return;
+      Object.keys(hd).forEach(function(host){
+        if(!agg[host])agg[host]={s:0,g:0};
+        agg[host].s+=hd[host].s;agg[host].g+=hd[host].g;
+      });
+    });
+    var cands=[];
+    Object.keys(agg).forEach(function(h){cands.push({h:h,avg:agg[h].g/agg[h].s,s:agg[h].s});});
+    cands.sort(function(a,b){return b.avg-a.avg;});
+    return cands.slice(0,3).map(function(c){return c.h;});
+  }
 
   var mapShopee=buildMap(basis.filter(function(r){return (r.platform||'shopee')==='shopee';}));
   var mapTiktok=buildMap(basis.filter(function(r){return r.platform==='tiktok';}));
@@ -859,19 +873,35 @@ function tplSchedule(f){
     return html;
   }
 
-  // Performance insight cards per slot
+  // Performance insight cards per 4-hour block (vertical column layout)
   function perfCards(mp,platform){
-    var cards='';
-    HOURS.forEach(function(h,i){
-      var top=getTop3(mp,h);
-      if(!top.length)return;
-      cards+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(51,65,85,.3)">'
-        +'<span style="font-size:11px;font-weight:600;color:#64748b;width:36px;flex-shrink:0">'+HLBLS[i]+'</span>'
-        +'<div style="display:flex;gap:4px">'
-        +top.map(function(h,ri){return '<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:'+hexRgb(hcol(h),0.25)+';color:'+hcol(h)+'">'+h+(ri===0?' ★':'')+'</span>';}).join('')
-        +'</div></div>';
+    // Group hourly slots into columns: each block is a side-by-side column
+    var BLOCKS=[
+      {label:'7AM–12PM', idxs:[0,1,2,3,4]},
+      {label:'12PM–4PM', idxs:[5,6,7,8]},
+      {label:'4PM–8PM',  idxs:[9,10,11,12]},
+      {label:'8PM–12AM', idxs:[13,14,15,16]},
+      {label:'12AM–3AM', idxs:[17,18,19]}
+    ];
+    var html='<div style="display:flex;gap:10px;align-items:flex-start">';
+    BLOCKS.forEach(function(block){
+      var rows='';
+      block.idxs.forEach(function(i){
+        var hour=HOURS[i];
+        var top=getTop3(mp,hour);
+        if(!top.length)return;
+        rows+='<div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(51,65,85,.25)">'
+          +'<span style="font-size:9px;font-weight:600;color:#64748b;width:56px;flex-shrink:0;white-space:nowrap">'+HLBLS[i]+'</span>'
+          +'<div style="display:flex;gap:3px;flex-wrap:wrap">'
+          +top.map(function(h,ri){return '<span style="font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;background:'+hexRgb(hcol(h),0.25)+';color:'+hcol(h)+'">'+h+(ri===0?' ★':'')+'</span>';}).join('')
+          +'</div></div>';
+      });
+      if(!rows)return;
+      html+='<div style="flex:1;min-width:0;background:rgba(15,23,42,.4);border:1px solid #1e3a5f;border-radius:8px;padding:10px 12px">'
+        +'<div style="font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:6px;letter-spacing:.5px;border-bottom:1px solid #1e3a5f;padding-bottom:5px">'+block.label+'</div>'
+        +rows+'</div>';
     });
-    return cards;
+    return html+'</div>';
   }
 
   // Controls
@@ -1142,64 +1172,80 @@ function setSchedPlatform(p){ST.schedPlatform=p;render();}
 function setSchedTargetMonth(m){ST.schedTargetMonth=m;render();}
 function setSchedSameHosts(v){ST.schedSameHosts=v;render();}
 function exportSchedule(){
-  if(typeof XLSX==='undefined'){alert('Excel library not loaded. Refresh the page.');return;}
+  if(typeof XLS==='undefined'){alert('Excel library not loaded. Refresh the page.');return;}
   var DOW_FULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var dIM=_SCHED.dIM,tMon=_SCHED.tMon,tYear=_SCHED.tYear,HLBLS=_SCHED.HLBLS;
   if(!dIM||!HLBLS){alert('Scroll down to the Schedule Planner section first so the schedule is generated.');return;}
   var mo=('0'+(tMon+1)).slice(-2);
   var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  function toRgb(hex){return hex.replace('#','').toUpperCase();}
+
+  // Styled cell helpers
+  function titleCell(v){return {v:v,t:'s',s:{fill:{fgColor:{rgb:'1E1B4B'}},font:{bold:true,color:{rgb:'A5B4FC'},sz:13},alignment:{horizontal:'left',vertical:'center'}}};}
+  function headerCell(v){return {v:v,t:'s',s:{fill:{fgColor:{rgb:'0F172A'}},font:{bold:true,color:{rgb:'CBD5E1'},sz:11},alignment:{horizontal:'center',vertical:'center'}}};}
+  function timeCell(v){return {v:v,t:'s',s:{fill:{fgColor:{rgb:'1E293B'}},font:{bold:true,color:{rgb:'94A3B8'},sz:10},alignment:{horizontal:'right',vertical:'center'}}};}
+  function hostCell(host){var rgb=toRgb(hcol(host));return {v:host,t:'s',s:{fill:{fgColor:{rgb:rgb}},font:{bold:true,color:{rgb:'FFFFFF'},sz:10},alignment:{horizontal:'center',vertical:'center'}}};}
+  function emptyCell(){return {v:'',t:'s',s:{fill:{fgColor:{rgb:'0F172A'}}}};}
+  function blankCell(){return {v:'',t:'s',s:{fill:{fgColor:{rgb:'0F172A'}}}};}
+
   // Split grid days into Mon-Sun weeks
   function splitWeeks(grid){
     var weeks=[],cur=[];
     grid.forEach(function(day){
       cur.push(day);
-      // End week on Sunday (dow=0) or last day
       if(day.dow===0||day.d===dIM){weeks.push(cur);cur=[];}
     });
     if(cur.length)weeks.push(cur);
     return weeks;
   }
 
-  // Build AOA with weekly blocks stacked vertically (matching reference image)
+  // Build styled AOA with weekly blocks stacked vertically
   function gridToWeeklyAOA(grid,sheetTitle){
     var weeks=splitWeeks(grid);
     var aoa=[];
-    // Sheet title row
-    aoa.push([sheetTitle+' — '+MN[tMon]+' '+tYear]);
-    aoa.push([]); // blank row
+    var rowMeta=[];
+
+    // Title row
+    aoa.push([titleCell(sheetTitle+' — '+MN[tMon]+' '+tYear)]);
+    rowMeta.push({hpt:22});
+    aoa.push([blankCell()]);
+    rowMeta.push({hpt:6});
 
     weeks.forEach(function(week,wi){
-      if(wi>0)aoa.push([]); // gap between weeks
+      if(wi>0){aoa.push([blankCell()]);rowMeta.push({hpt:6});}
 
-      // Row 1: date numbers  e.g. '' | 1/06 | 2/06 ...
-      var dateRow=[''];
-      week.forEach(function(d){dateRow.push(d.d+'/'+mo);});
-      aoa.push(dateRow);
+      // Date numbers row
+      var dateRow=[headerCell('')];
+      week.forEach(function(d){dateRow.push(headerCell(d.d+'/'+mo));});
+      aoa.push(dateRow);rowMeta.push({hpt:18});
 
-      // Row 2: day names  e.g. '' | Monday | Tuesday ...
-      var dayRow=[''];
-      week.forEach(function(d){dayRow.push(DOW_FULL[d.dow]);});
-      aoa.push(dayRow);
+      // Day names row
+      var dayRow=[headerCell('')];
+      week.forEach(function(d){dayRow.push(headerCell(DOW_FULL[d.dow]));});
+      aoa.push(dayRow);rowMeta.push({hpt:20});
 
       // Time slot rows
       HLBLS.forEach(function(lbl,i){
-        var row=[lbl];
-        week.forEach(function(day){row.push(day.hosts[i]||'');});
-        aoa.push(row);
+        var row=[timeCell(lbl)];
+        week.forEach(function(day){
+          var host=day.hosts[i];
+          row.push(host?hostCell(host):emptyCell());
+        });
+        aoa.push(row);rowMeta.push({hpt:20});
       });
     });
-    return aoa;
+    return {aoa:aoa,rowMeta:rowMeta};
   }
 
-  var wb=XLSX.utils.book_new();
+  var wb=XLS.utils.book_new();
   var addSheet=function(grid,name){
     if(!grid)return;
-    var aoa=gridToWeeklyAOA(grid,name);
-    var ws=XLSX.utils.aoa_to_sheet(aoa);
-    // Column widths: time col + 7 day cols
-    ws['!cols']=[{wch:11},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12}];
-    XLSX.utils.book_append_sheet(wb,ws,name);
+    var result=gridToWeeklyAOA(grid,name);
+    var ws=XLS.utils.aoa_to_sheet(result.aoa);
+    ws['!cols']=[{wch:12},{wch:13},{wch:13},{wch:13},{wch:13},{wch:13},{wch:13},{wch:13}];
+    ws['!rows']=result.rowMeta;
+    XLS.utils.book_append_sheet(wb,ws,name);
   };
   if(ST.schedPlatform==='shopee'||ST.schedPlatform==='both'){
     addSheet(ST.schedSameHosts&&ST.schedPlatform==='both'?_SCHED.gBoth:_SCHED.gShopee,'Shopee MY');
@@ -1208,7 +1254,7 @@ function exportSchedule(){
     addSheet(ST.schedSameHosts&&ST.schedPlatform==='both'?_SCHED.gBoth:_SCHED.gTiktok,'TikTok MY');
   }
   if(!wb.SheetNames||!wb.SheetNames.length){alert('No schedule data to export.');return;}
-  XLSX.writeFile(wb,'LiveSchedule_'+ST.schedTargetMonth.replace(' ','_')+'.xlsx');
+  XLS.writeFile(wb,'LiveSchedule_'+ST.schedTargetMonth.replace(' ','_')+'.xlsx');
 }
 function setAnalysisCustFrom(v){ST.analysisCustFrom=Math.max(0,Math.min(23,v||0));render();}
 function setAnalysisCustTo(v){ST.analysisCustTo=Math.max(0,Math.min(23,v||23));render();}
@@ -1331,17 +1377,17 @@ function processRowData(data,plat,done){
 function parseOneCSV(f,plat,done){
   var ext=(f.name||'').split('.').pop().toLowerCase();
   if(ext==='xls'||ext==='xlsx'){
-    if(typeof XLSX==='undefined'){
+    if(typeof XLS==='undefined'){
       alert('Excel library failed to load. Please refresh the page and try again, or use CSV format.');
       if(done)done(0);return;
     }
     var reader=new FileReader();
     reader.onload=function(e){
       try{
-        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        var wb=XLS.read(new Uint8Array(e.target.result),{type:'array'});
         var ws=wb.Sheets[wb.SheetNames[0]];
         // raw:false → all cells as display strings (same pipeline as CSV)
-        var data=XLSX.utils.sheet_to_json(ws,{raw:false,defval:''});
+        var data=XLS.utils.sheet_to_json(ws,{raw:false,defval:''});
         if(!data.length){alert('Excel file appears empty or has no header row on Sheet 1.');if(done)done(0);return;}
         processRowData(data,plat,done);
       }catch(err){
