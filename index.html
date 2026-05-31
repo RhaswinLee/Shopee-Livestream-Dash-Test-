@@ -7,7 +7,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx-js-style.min.js"></script>
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx-js-style.min.js"></script>
 <style>
 body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#1e293b}
@@ -1172,7 +1173,9 @@ function setSchedPlatform(p){ST.schedPlatform=p;render();}
 function setSchedTargetMonth(m){ST.schedTargetMonth=m;render();}
 function setSchedSameHosts(v){ST.schedSameHosts=v;render();}
 function exportSchedule(){
-  if(typeof XLS==='undefined'){alert('Excel library not loaded. Refresh the page.');return;}
+  var XLS_LIB=(typeof XLS!=='undefined')?XLS:(typeof XLSX!=='undefined'?XLSX:null);
+  if(!XLS_LIB){alert('Excel library not loaded. Refresh the page.');return;}
+  var XLS=XLS_LIB;
   var DOW_FULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var dIM=_SCHED.dIM,tMon=_SCHED.tMon,tYear=_SCHED.tYear,HLBLS=_SCHED.HLBLS;
   if(!dIM||!HLBLS){alert('Scroll down to the Schedule Planner section first so the schedule is generated.');return;}
@@ -1377,17 +1380,17 @@ function processRowData(data,plat,done){
 function parseOneCSV(f,plat,done){
   var ext=(f.name||'').split('.').pop().toLowerCase();
   if(ext==='xls'||ext==='xlsx'){
-    if(typeof XLS==='undefined'){
+    if(typeof XLSX==='undefined'){
       alert('Excel library failed to load. Please refresh the page and try again, or use CSV format.');
       if(done)done(0);return;
     }
     var reader=new FileReader();
     reader.onload=function(e){
       try{
-        var wb=XLS.read(new Uint8Array(e.target.result),{type:'array'});
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
         var ws=wb.Sheets[wb.SheetNames[0]];
         // raw:false → all cells as display strings (same pipeline as CSV)
-        var data=XLS.utils.sheet_to_json(ws,{raw:false,defval:''});
+        var data=XLSX.utils.sheet_to_json(ws,{raw:false,defval:''});
         if(!data.length){alert('Excel file appears empty or has no header row on Sheet 1.');if(done)done(0);return;}
         processRowData(data,plat,done);
       }catch(err){
