@@ -82,6 +82,47 @@ tr:hover td{background:rgba(51,65,85,.3)}
   </div>
 </div>
 
+<!-- ── DRIVE SYNC MODAL ─────────────────────────────────────────────── -->
+<div id="drive-modal" style="display:none;position:fixed;inset:0;z-index:102;background:rgba(15,23,42,.88);align-items:center;justify-content:center;padding:16px">
+  <div style="background:#1e293b;border-radius:16px;border:1px solid #475569;padding:28px;max-width:520px;width:100%;max-height:82vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,.6)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div>
+        <h2 style="font-size:17px;font-weight:700;color:#fff;margin:0">⚙️ Google Drive Sync</h2>
+        <p style="font-size:11px;color:#64748b;margin-top:3px">Auto-load live data directly from Google Sheets</p>
+      </div>
+      <button onclick="closeDriveModal()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <!-- Add new sheet -->
+    <div style="background:rgba(51,65,85,.35);border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px">
+      <p style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase">Add Google Sheet</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input id="drive-name-input" placeholder="Label (e.g. April Stream Data)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
+        <div style="display:flex;gap:8px">
+          <select id="drive-plat-input" style="flex:1;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none">
+            <option value="shopee">Shopee</option>
+            <option value="tiktok">TikTok</option>
+          </select>
+          <input id="drive-sheet-input" placeholder="Sheet name/tab (optional)" style="flex:2;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none"/>
+        </div>
+        <input id="drive-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit?usp=sharing" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
+        <button onclick="addDriveLink()" style="padding:8px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">+ Add Sheet</button>
+      </div>
+    </div>
+    <!-- Saved sheets list -->
+    <div id="drive-links-list" style="margin-bottom:14px"></div>
+    <!-- Sync now -->
+    <button onclick="syncAllDrive()" id="drive-sync-btn" style="width:100%;padding:9px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:8px;color:#34d399;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:14px">⟳ Sync Now</button>
+    <!-- Instructions -->
+    <div style="background:rgba(15,23,42,.6);border-radius:8px;padding:11px;font-size:11px;color:#64748b;line-height:1.7">
+      <b style="color:#94a3b8">How to set up Google Sheets for sync:</b><br>
+      1. Open your Google Sheet → <b style="color:#cbd5e1">File → Share → Publish to web</b><br>
+      2. Select <b style="color:#cbd5e1">Entire Document</b> and choose <b style="color:#cbd5e1">Comma-separated values (.csv)</b><br>
+      3. Click <b style="color:#cbd5e1">Publish</b>, then copy the link — or paste the regular share URL above<br>
+      <span style="color:#475569;font-size:10px">Note: Sheet must be Published to web (not just shared) for browser fetch to work.</span>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── CONSTANTS ──────────────────────────────────────────────────────
 var HOSTS = ['YANA','FILZA','MAS','QAQA','LISA','SITI'];
@@ -122,6 +163,7 @@ var ST = {
   schedBasis:'month3', schedPlatform:'shopee', schedTargetMonth:'', schedSameHosts:false
 };
 var CHS = {}; // chart instances
+var _DRIVE = {status:'idle', error:'', links:[]}; // 'idle'|'syncing'|'ok'|'error'
 var PP={open:false,mode:'',calYear:new Date().getFullYear(),calMonth:new Date().getMonth(),s0:null,s1:null};
 var _SCHED={gShopee:null,gTiktok:null,gBoth:null,HLBLS:null,dIM:0,tMon:0,tYear:0};
 
@@ -1305,6 +1347,159 @@ function loadFromStorage(){
   return false;
 }
 
+// ── GOOGLE DRIVE SYNC ──────────────────────────────────────────────
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function convertDriveUrlToCsv(url){
+  // Extract spreadsheet ID from any Google Sheets URL variant
+  var m=url.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if(!m)return url; // pass through non-Sheets URLs as-is
+  var id=m[1];
+  // pub?output=csv works in browsers without auth (requires sheet published to web)
+  // Detect if it's already a pub URL
+  if(url.indexOf('/pub')>=0)return url;
+  return 'https://docs.google.com/spreadsheets/d/'+id+'/pub?output=csv&gid=0&single=true';
+}
+
+function getDriveLinks(){
+  try{return JSON.parse(localStorage.getItem('drive_links')||'[]');}catch(e){return [];}
+}
+function saveDriveLinks(links){
+  try{localStorage.setItem('drive_links',JSON.stringify(links));}catch(e){}
+}
+
+function openDriveModal(){
+  _DRIVE.links=getDriveLinks();
+  renderDriveList();
+  document.getElementById('drive-modal').style.display='flex';
+}
+function closeDriveModal(){
+  document.getElementById('drive-modal').style.display='none';
+}
+
+function addDriveLink(){
+  var name=(document.getElementById('drive-name-input').value||'').trim();
+  var plat=document.getElementById('drive-plat-input').value;
+  var url=(document.getElementById('drive-url-input').value||'').trim();
+  if(!url){alert('Please paste a Google Sheets URL.');return;}
+  if(!name)name=(plat==='tiktok'?'TikTok':'Shopee')+' Sheet '+(_DRIVE.links.length+1);
+  _DRIVE.links.push({id:Date.now(),name:name,platform:plat,url:url});
+  saveDriveLinks(_DRIVE.links);
+  document.getElementById('drive-name-input').value='';
+  document.getElementById('drive-url-input').value='';
+  document.getElementById('drive-sheet-input').value='';
+  renderDriveList();
+}
+function removeDriveLink(id){
+  _DRIVE.links=_DRIVE.links.filter(function(l){return l.id!==id;});
+  saveDriveLinks(_DRIVE.links);
+  renderDriveList();
+  if(!_DRIVE.links.length){_DRIVE.status='idle';renderDriveBadge();}
+}
+
+function renderDriveList(){
+  var el=document.getElementById('drive-links-list');
+  if(!el)return;
+  if(!_DRIVE.links.length){
+    el.innerHTML='<p style="text-align:center;color:#475569;font-size:12px;padding:10px 0">No sheets added yet — add one above.</p>';
+    return;
+  }
+  el.innerHTML=_DRIVE.links.map(function(l){
+    var pc=l.platform==='tiktok'?'#69c9d0':'#ff6b4a';
+    var short=l.url.length>55?l.url.substring(0,55)+'…':l.url;
+    return '<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:rgba(15,23,42,.5);border:1px solid #1e3a5f;border-radius:8px;margin-bottom:6px">'
+      +'<div style="width:7px;height:7px;border-radius:50%;background:'+pc+';flex-shrink:0"></div>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:12px;font-weight:600;color:#cbd5e1">'+escHtml(l.name)+'</div>'
+        +'<div style="font-size:10px;color:#475569;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(short)+'</div>'
+      +'</div>'
+      +'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(71,85,105,.4);color:'+pc+'">'+escHtml(l.platform)+'</span>'
+      +'<button onclick="removeDriveLink('+l.id+')" style="background:none;border:none;color:#475569;cursor:pointer;font-size:15px;padding:2px 5px;line-height:1" title="Remove">✕</button>'
+      +'</div>';
+  }).join('');
+}
+
+function renderDriveBadge(){
+  var b=document.getElementById('drive-sync-badge');
+  if(!b)return;
+  var links=getDriveLinks();
+  if(!links.length&&_DRIVE.status==='idle'){b.style.display='none';return;}
+  b.style.display='inline-flex';
+  if(_DRIVE.status==='syncing'){
+    b.textContent='🟡 Syncing…';
+    b.style.cssText='display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:rgba(234,179,8,.15);color:#fbbf24;border:1px solid rgba(234,179,8,.3);cursor:default';
+  }else if(_DRIVE.status==='ok'){
+    b.textContent='🟢 Drive Synced';
+    b.style.cssText='display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3);cursor:default';
+  }else if(_DRIVE.status==='error'){
+    b.textContent='🔴 Sync Error';
+    b.style.cssText='display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);cursor:pointer';
+    b.onclick=function(){document.getElementById('drive-error-banner').style.display='block';window.scrollTo({top:0,behavior:'smooth'});};
+  }else{
+    b.style.display='none';
+  }
+}
+
+function syncAllDrive(onDone){
+  var links=getDriveLinks();
+  if(!links.length){if(onDone)onDone(0);return;}
+  _DRIVE.status='syncing';_DRIVE.error='';
+  renderDriveBadge();
+  var banner=document.getElementById('drive-error-banner');
+  if(banner)banner.style.display='none';
+  // Update sync button state
+  var btn=document.getElementById('drive-sync-btn');
+  if(btn){btn.disabled=true;btn.textContent='⟳ Syncing…';}
+
+  var pending=links.length,totalAdded=0,hasError=false,errDetail='';
+
+  function finish(){
+    _DRIVE.status=hasError?'error':'ok';
+    _DRIVE.error=errDetail;
+    renderDriveBadge();
+    if(btn){btn.disabled=false;btn.textContent='⟳ Sync Now';}
+    if(hasError){
+      var bn=document.getElementById('drive-error-banner');
+      if(bn){
+        bn.innerHTML='⚠️ <b>Sync Failed:</b> Please ensure your Google Sheet is <b>Published to web</b> (File → Share → Publish to web → CSV) and that sharing is set to <b>"Anyone with the link can view"</b>. <button onclick="this.parentNode.style.display=\'none\'" style="float:right;background:none;border:none;color:#fbbf24;cursor:pointer;font-size:13px">✕</button>';
+        bn.style.display='block';
+      }
+    }
+    if(totalAdded>0){saveToStorage();rebuildHostsFromData();render();}
+    if(onDone)onDone(totalAdded);
+  }
+
+  links.forEach(function(link){
+    var csvUrl=convertDriveUrlToCsv(link.url);
+    fetch(csvUrl)
+      .then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.text();
+      })
+      .then(function(text){
+        var rawRows=Papa.parse(text,{header:false,skipEmptyLines:true}).data;
+        var hIdx=0;
+        for(var i=0;i<Math.min(8,rawRows.length);i++){
+          var fc=String(rawRows[i][0]||'').trim().toLowerCase();
+          var ne=rawRows[i].filter(function(c){return String(c).trim();}).length;
+          if(ne<2||fc.indexOf('date range')>=0||fc.indexOf('report period')>=0||fc==='')continue;
+          hIdx=i;break;
+        }
+        var headers=rawRows[hIdx].map(function(h){return String(h||'').trim();});
+        var dataRows=rawRows.slice(hIdx+1).map(function(row){
+          var obj={};headers.forEach(function(h,i){obj[h]=row[i]!==undefined?row[i]:'';});return obj;
+        });
+        processRowData(dataRows,link.platform,function(n){totalAdded+=n;});
+      })
+      .catch(function(err){
+        hasError=true;
+        errDetail=err&&err.message?err.message:String(err);
+        console.error('[Drive Sync] Failed for "'+link.name+'":', err);
+      })
+      .then(function(){pending--;if(pending===0)finish();});
+  });
+}
+
 // ── UPLOAD ─────────────────────────────────────────────────────────
 function openModal(){
   var hint=document.getElementById('modal-hint');
@@ -1500,12 +1695,15 @@ document.getElementById('root').innerHTML=
 +'<div style="display:flex;align-items:center;gap:12px">'
 +'<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>'
 +'<div><h1 style="font-size:16px;font-weight:700;color:#fff;line-height:1">Live Stream Analytics</h1><p style="font-size:12px;color:#64748b">Multi-Platform Performance Dashboard</p></div></div>'
-+'<div style="display:flex;align-items:center;gap:12px">'
++'<div style="display:flex;align-items:center;gap:8px">'
++'<span id="drive-sync-badge" style="display:none"></span>'
 +'<span id="badge" class="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400">Demo · 0 sessions</span>'
++'<button onclick="openDriveModal()" style="display:flex;align-items:center;gap:5px;padding:6px 12px;background:rgba(99,102,241,.2);border:1px solid #6366f1;color:#a5b4fc;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer">⚙️ Drive Sync</button>'
 +'<button onclick="openModal()" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#4f46e5;border:none;color:#fff;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer">⬆ Upload CSV</button>'
 +'</div></div></div>'
 // body
 +'<div style="max-width:1280px;margin:0 auto;padding:16px 16px 32px">'
++'<div id="drive-error-banner" style="display:none;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#fbbf24;line-height:1.5"></div>'
 +'<div id="filters" class="card" style="margin-bottom:16px"></div>'
 +'<div id="kpis" style="margin-bottom:16px"></div>'
 +'<div id="tabnav" style="background:rgba(30,41,59,.6);border-radius:12px;border:1px solid #334155;padding:6px;display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px"></div>'
@@ -1523,9 +1721,19 @@ document.addEventListener('click',function(e){
   if(PP.open&&panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target))closePeriodPanel();
 });
 
-// Init: localStorage → shared data.json → demo
+// Init: localStorage → shared data.json → demo → auto Drive sync
 (function doInit(){
-  if(loadFromStorage()){rebuildHostsFromData();saveToStorage();render();return;}
+  function afterBaseLoad(){
+    render();
+    // Auto-sync saved Drive links on every page load
+    var driveLinks=getDriveLinks();
+    if(driveLinks.length){
+      _DRIVE.links=driveLinks;
+      renderDriveBadge(); // show idle badge while syncing starts
+      syncAllDrive();
+    }
+  }
+  if(loadFromStorage()){rebuildHostsFromData();saveToStorage();afterBaseLoad();return;}
   fetch('/data.json',{cache:'no-cache'})
     .then(function(r){if(!r.ok)throw 0;return r.json();})
     .then(function(p){
@@ -1533,7 +1741,7 @@ document.addEventListener('click',function(e){
       else{ST.raw=genMock();}
     })
     .catch(function(){ST.raw=genMock();})
-    .then(function(){render();});
+    .then(function(){afterBaseLoad();});
 }());
 </script>
 </body>
