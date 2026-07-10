@@ -1519,6 +1519,30 @@ function syncDriveFolderFiles(folder,cb){
   });
 }
 
+// Wipe existing sessions for every platform that has a connected Drive
+// folder/sheet, then re-download everything fresh — so Drive becomes the
+// sole source of truth for those platforms instead of a merge with old
+// manually-uploaded data. Platforms with nothing connected are left alone
+// (we never delete data we have no way to restore).
+function clearAndResyncFromDrive(){
+  var connectedPids=[];
+  getDriveFolders().forEach(function(f){if(connectedPids.indexOf(f.platform)<0)connectedPids.push(f.platform);});
+  getDriveLinks().forEach(function(l){if(connectedPids.indexOf(l.platform)<0)connectedPids.push(l.platform);});
+  if(!connectedPids.length){alert('Connect at least one Drive folder or Sheet first.');return;}
+  var labels=connectedPids.map(function(pid){return platInfo(pid).label;}).join(', ');
+  var unconnected=PLATFORMS.filter(function(p){return connectedPids.indexOf(p.id)<0;}).map(function(p){return p.label;});
+  var msg='This will permanently delete all currently loaded sessions for: '+labels+', then re-download everything fresh from Drive.'
+    +(unconnected.length?'\n\n'+unconnected.join(', ')+' — no folder/sheet connected, existing data for these will be left as-is.':'')
+    +'\n\nThis cannot be undone. Continue?';
+  if(!confirm(msg))return;
+  ST.raw=(ST.raw||[]).filter(function(r){return connectedPids.indexOf(r.platform||'shopee_my')<0;});
+  ST.isDemo=false;
+  saveToStorage();
+  logSync('system','Cleared existing data for: '+labels+' — resyncing from Drive…','info');
+  render();
+  renderSyncSettings();
+  syncAllDrive();
+}
 // ── Data Sync Settings panel ─────────────────────────────────────────
 var _SYNC_TIMER=null;
 function ensureAutoSyncInterval(){
@@ -1537,8 +1561,10 @@ function renderSyncSettings(){
   var header='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-top:8px">'
     +'<div><h2 style="font-size:19px;font-weight:700;color:#fff;margin:0">⚙️ Data Sync Settings</h2>'
     +'<p style="font-size:12px;color:#64748b;margin-top:4px">'+connectedCount+' of '+PLATFORMS.length+' platforms connected to Google Drive</p></div>'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +(connectedCount>0?'<button onclick="clearAndResyncFromDrive()" style="padding:6px 12px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:7px;color:#f87171;font-size:11px;font-weight:700;cursor:pointer" title="Delete existing sessions for connected platforms and re-download fresh from Drive">🗑️ Clear &amp; Resync from Drive</button>':'')
     +'<button onclick="closeDriveModal()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;line-height:1;padding:4px">✕</button>'
-    +'</div>';
+    +'</div></div>';
 
   var apiCard='<div class="card" style="padding:16px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
