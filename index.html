@@ -16,6 +16,10 @@ body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',sans-serif}
 .tab-btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:all .2s;background:transparent;color:#94a3b8}
 .tab-btn:hover{background:#334155;color:#e2e8f0}
 .tab-btn.active{background:#4f46e5;color:#fff}
+.side-btn{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;padding:9px 12px;border-radius:8px;font-size:13px;font-weight:500;border:none;cursor:pointer;transition:all .15s;background:transparent;color:#94a3b8}
+.side-btn:hover{background:#334155;color:#e2e8f0}
+.side-btn.active{background:#4f46e5;color:#fff}
+.side-btn .side-ic{width:16px;text-align:center;flex-shrink:0;font-size:13px}
 .pill{padding:4px 12px;border-radius:8px;font-size:12px;font-weight:500;border:none;cursor:pointer;transition:all .2s;background:#1e293b;color:#94a3b8}
 .pill:hover{background:#334155;color:#e2e8f0}
 .pill.active{background:#4f46e5;color:#fff}
@@ -392,7 +396,6 @@ function render(){
   renderKPIs(kpi);
   renderTabs();
   renderPanel(f,kpi,hd,sd);
-  renderScheduleSection(f);
 }
 
 function getUniqueHosts(){
@@ -474,11 +477,15 @@ function renderKPIs(kpi){
 }
 
 function renderTabs(){
-  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis'];
-  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis'];
-  document.getElementById('tabnav').innerHTML=tabs.map(function(t,i){
-    return '<button class="tab-btn'+(ST.tab===t?' active':'')+'" onclick="setTab(\''+t+'\')">'+labels[i]+'</button>';
+  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis','schedule'];
+  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis','Schedule Planner'];
+  var icons=['📊','⏱️','🎤','💡','📦','🏆','🔥','📈','📅'];
+  var el=document.getElementById('sidebar');
+  if(!el)return;
+  var nav=tabs.map(function(t,i){
+    return '<button class="side-btn'+(ST.tab===t?' active':'')+'" onclick="setTab(\''+t+'\')"><span class="side-ic">'+icons[i]+'</span>'+labels[i]+'</button>';
   }).join('');
+  el.innerHTML='<div class="card" style="padding:10px;display:flex;flex-direction:column;gap:2px">'+nav+'</div>';
 }
 
 function renderPanel(f,kpi,hd,sd){
@@ -492,6 +499,7 @@ function renderPanel(f,kpi,hd,sd){
   else if(ST.tab==='league') el.innerHTML=tplLeague(hd);
   else if(ST.tab==='hotspot') el.innerHTML=tplHotspot();
   else if(ST.tab==='analysis') el.innerHTML=tplAnalysis(f,hd);
+  else if(ST.tab==='schedule') el.innerHTML=tplScheduleSection(f);
   // create charts after DOM insert
   if(ST.tab==='overview') makeOverviewCharts(hd);
   else if(ST.tab==='timeslots') makeSlotChart(sd);
@@ -1061,18 +1069,8 @@ function makeHostChart(hd){
 }
 
 // ── SCHEDULE SECTION (standalone, always rendered at page bottom) ──
-function renderScheduleSection(f){
-  var el=document.getElementById('schedule-section');
-  if(!el)return;
-  var banner='<div style="max-width:1280px;margin:0 auto">'
-    +'<div style="display:flex;align-items:center;gap:0;margin-bottom:24px;margin-top:8px">'
-      +'<div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,#334155)"></div>'
-      +'<div style="padding:0 24px;text-align:center;white-space:nowrap">'
-        +'<span style="font-size:11px;font-weight:700;color:#4f46e5;letter-spacing:.12em;text-transform:uppercase">Section 10</span>'
-      +'</div>'
-      +'<div style="flex:1;height:2px;background:linear-gradient(90deg,#334155,transparent)"></div>'
-    +'</div>'
-    +'<div style="background:linear-gradient(135deg,rgba(79,70,229,.18),rgba(139,92,246,.12));border:1px solid rgba(99,102,241,.35);border-radius:16px;padding:20px 28px;margin-bottom:24px">'
+function tplScheduleSection(f){
+  var banner='<div style="background:linear-gradient(135deg,rgba(79,70,229,.18),rgba(139,92,246,.12));border:1px solid rgba(99,102,241,.35);border-radius:16px;padding:20px 28px;margin-bottom:16px">'
       +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
         +'<div style="width:4px;height:36px;background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:2px;flex-shrink:0"></div>'
         +'<div>'
@@ -1080,10 +1078,9 @@ function renderScheduleSection(f){
           +'<p style="font-size:12px;color:#94a3b8;margin:0">AI-recommended host assignments based on historical GMV · CTR · CTOR · session frequency per time slot</p>'
         +'</div>'
       +'</div>'
-    +'</div>'
-  +'</div>';
-  // tplSchedule renders at full available width (overflow-x:auto on tables)
-  el.innerHTML=banner+'<div style="max-width:1600px;margin:0 auto">'+tplSchedule(f)+'</div>';
+    +'</div>';
+  // tables inside tplSchedule have their own overflow-x:auto for wide months
+  return banner+tplSchedule(f);
 }
 // ── PERIOD PANEL ───────────────────────────────────────────────────
 function periodLabel(){
@@ -1224,7 +1221,7 @@ function exportSchedule(){
   var XLS=XLS_LIB;
   var DOW_FULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   var dIM=_SCHED.dIM,tMon=_SCHED.tMon,tYear=_SCHED.tYear,HLBLS=_SCHED.HLBLS;
-  if(!dIM||!HLBLS){alert('Scroll down to the Schedule Planner section first so the schedule is generated.');return;}
+  if(!dIM||!HLBLS){alert('Open the Schedule Planner section first so the schedule is generated.');return;}
   var mo=('0'+(tMon+1)).slice(-2);
   var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -1691,7 +1688,7 @@ document.getElementById('root').innerHTML=
 '<div style="min-height:100vh">'
 // header
 +'<div style="position:sticky;top:0;z-index:40;background:rgba(30,41,59,.97);backdrop-filter:blur(8px);border-bottom:1px solid #334155;padding:12px 24px">'
-+'<div style="max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between">'
++'<div style="max-width:1560px;margin:0 auto;display:flex;align-items:center;justify-content:space-between">'
 +'<div style="display:flex;align-items:center;gap:12px">'
 +'<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>'
 +'<div><h1 style="font-size:16px;font-weight:700;color:#fff;line-height:1">Live Stream Analytics</h1><p style="font-size:12px;color:#64748b">Multi-Platform Performance Dashboard</p></div></div>'
@@ -1701,16 +1698,16 @@ document.getElementById('root').innerHTML=
 +'<button onclick="openDriveModal()" style="display:flex;align-items:center;gap:5px;padding:6px 12px;background:rgba(99,102,241,.2);border:1px solid #6366f1;color:#a5b4fc;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer">⚙️ Drive Sync</button>'
 +'<button onclick="openModal()" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#4f46e5;border:none;color:#fff;font-size:12px;font-weight:500;border-radius:8px;cursor:pointer">⬆ Upload CSV</button>'
 +'</div></div></div>'
-// body
-+'<div style="max-width:1280px;margin:0 auto;padding:16px 16px 32px">'
+// body — left sidebar nav + main content
++'<div style="max-width:1560px;margin:0 auto;padding:16px 16px 32px;display:flex;align-items:flex-start;gap:20px">'
++'<div id="sidebar" style="width:210px;flex-shrink:0;position:sticky;top:76px"></div>'
++'<div style="flex:1;min-width:0">'
 +'<div id="drive-error-banner" style="display:none;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#fbbf24;line-height:1.5"></div>'
 +'<div id="filters" class="card" style="margin-bottom:16px"></div>'
 +'<div id="kpis" style="margin-bottom:16px"></div>'
-+'<div id="tabnav" style="background:rgba(30,41,59,.6);border-radius:12px;border:1px solid #334155;padding:6px;display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px"></div>'
 +'<div id="panel"></div>'
 +'</div>'
-// Schedule Planner — full-width standalone section, no max-width cap on table scroll
-+'<div id="schedule-section" style="padding:0 16px 40px"></div>'
++'</div>'
 +'<div style="border-top:1px solid rgba(51,65,85,.5);padding:16px;text-align:center;font-size:12px;color:#475569">Live Stream Analytics · Demo data — upload your CSV to see real metrics</div>'
 +'</div>';
 
