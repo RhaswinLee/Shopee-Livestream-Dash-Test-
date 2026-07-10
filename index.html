@@ -86,75 +86,9 @@ tr:hover td{background:rgba(51,65,85,.3)}
 </div>
 
 <!-- ── DRIVE SYNC MODAL ─────────────────────────────────────────────── -->
-<div id="drive-modal" style="display:none;position:fixed;inset:0;z-index:102;background:rgba(15,23,42,.88);align-items:center;justify-content:center;padding:16px">
-  <div style="background:#1e293b;border-radius:16px;border:1px solid #475569;padding:28px;max-width:520px;width:100%;max-height:82vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,.6)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-      <div>
-        <h2 style="font-size:17px;font-weight:700;color:#fff;margin:0">⚙️ Google Drive Sync</h2>
-        <p style="font-size:11px;color:#64748b;margin-top:3px">Auto-load live data directly from Google Sheets</p>
-      </div>
-      <button onclick="closeDriveModal()" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1">✕</button>
-    </div>
-    <!-- Google API Key (needed for Drive Folder sync) -->
-    <div style="background:rgba(51,65,85,.35);border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px">
-      <p style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase">Google API Key <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0">— needed for Folder sync only</span></p>
-      <input id="drive-apikey-input" onchange="saveApiKeyFromInput()" onblur="saveApiKeyFromInput()" placeholder="AIza..." style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
-      <p style="font-size:10px;color:#475569;margin-top:6px">One-time setup, stored only in your browser. See steps below.</p>
-    </div>
-    <!-- Add new folder -->
-    <div style="background:rgba(51,65,85,.35);border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px">
-      <p style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase">📁 Add Drive Folder <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0">— auto-syncs every file inside</span></p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="drive-folder-name-input" placeholder="Label (e.g. Shopee MY)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
-        <select id="drive-folder-plat-input" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none">
-          <option value="shopee_my">Shopee MY</option>
-          <option value="shopee_sg">Shopee SG</option>
-          <option value="tiktok_my">TikTok MY</option>
-          <option value="tiktok_sg">TikTok SG</option>
-        </select>
-        <input id="drive-folder-url-input" placeholder="https://drive.google.com/drive/folders/..." style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
-        <button onclick="addDriveFolder()" style="padding:8px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">+ Add Folder</button>
-      </div>
-    </div>
-    <!-- Saved folders list -->
-    <div id="drive-folders-list" style="margin-bottom:16px"></div>
-    <!-- Add new sheet -->
-    <div style="background:rgba(51,65,85,.35);border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px">
-      <p style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase">Add Google Sheet</p>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="drive-name-input" placeholder="Label (e.g. April Stream Data)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
-        <div style="display:flex;gap:8px">
-          <select id="drive-plat-input" style="flex:1;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none">
-            <option value="shopee_my">Shopee MY</option>
-            <option value="shopee_sg">Shopee SG</option>
-            <option value="tiktok_my">TikTok MY</option>
-            <option value="tiktok_sg">TikTok SG</option>
-          </select>
-          <input id="drive-sheet-input" placeholder="Sheet name/tab (optional)" style="flex:2;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none"/>
-        </div>
-        <input id="drive-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit?usp=sharing" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>
-        <button onclick="addDriveLink()" style="padding:8px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">+ Add Sheet</button>
-      </div>
-    </div>
-    <!-- Saved sheets list -->
-    <div id="drive-links-list" style="margin-bottom:14px"></div>
-    <!-- Sync now -->
-    <button onclick="syncAllDrive()" id="drive-sync-btn" style="width:100%;padding:9px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:8px;color:#34d399;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:14px">⟳ Sync Now</button>
-    <!-- Instructions -->
-    <div style="background:rgba(15,23,42,.6);border-radius:8px;padding:11px;font-size:11px;color:#64748b;line-height:1.7">
-      <b style="color:#94a3b8">How to set up a Drive Folder for auto-sync:</b><br>
-      1. In Google Cloud Console, create a project → <b style="color:#cbd5e1">enable the Google Drive API</b> → create an <b style="color:#cbd5e1">API key</b> (restrict it to your dashboard's domain for safety)<br>
-      2. Paste that key into <b style="color:#cbd5e1">Google API Key</b> above<br>
-      3. In Drive, right-click each folder → <b style="color:#cbd5e1">Share → General access → Anyone with the link (Viewer)</b><br>
-      4. Copy the folder link and paste it into <b style="color:#cbd5e1">Add Drive Folder</b> above, once per folder<br>
-      <span style="color:#475569;font-size:10px">Every CSV/XLS/XLSX file inside that folder is pulled in automatically, including new ones added later.</span>
-      <br><br>
-      <b style="color:#94a3b8">How to set up a single Google Sheet instead:</b><br>
-      1. Open your Google Sheet → <b style="color:#cbd5e1">File → Share → Publish to web</b><br>
-      2. Select <b style="color:#cbd5e1">Entire Document</b> and choose <b style="color:#cbd5e1">Comma-separated values (.csv)</b><br>
-      3. Click <b style="color:#cbd5e1">Publish</b>, then copy the link — or paste the regular share URL above<br>
-      <span style="color:#475569;font-size:10px">Note: Sheet must be Published to web (not just shared) for browser fetch to work.</span>
-    </div>
+<div id="drive-modal" style="display:none;position:fixed;inset:0;z-index:102;background:rgba(15,23,42,.92);padding:16px 16px 40px;overflow-y:auto">
+  <div style="max-width:980px;margin:0 auto">
+    <div id="drive-modal-body"></div>
   </div>
 </div>
 
@@ -1447,47 +1381,70 @@ function extractDriveFolderId(url){
   if(/^[a-zA-Z0-9_-]{10,}$/.test(url.trim()))return url.trim();
   return null;
 }
-function addDriveFolder(){
-  var name=(document.getElementById('drive-folder-name-input').value||'').trim();
-  var plat=document.getElementById('drive-folder-plat-input').value;
-  var url=(document.getElementById('drive-folder-url-input').value||'').trim();
-  if(!url){alert('Please paste a Google Drive folder link.');return;}
+// One folder slot per platform — connecting re-points the existing slot
+function connectPlatformFolder(pid){
+  var input=document.getElementById('pf-url-'+pid);
+  var url=(input&&input.value||'').trim();
+  if(!url){alert('Paste a Drive folder link for '+platInfo(pid).label+' first.');return;}
   var fid=extractDriveFolderId(url);
   if(!fid){alert('Could not find a folder ID in that link. Paste the full folder URL from your browser address bar.');return;}
   var folders=getDriveFolders();
-  if(!name)name=platInfo(plat).label+' Folder '+(folders.length+1);
-  folders.push({id:Date.now(),folderId:fid,name:name,platform:plat,url:url});
+  var existing=folders.find(function(f){return f.platform===pid;});
+  if(existing){existing.folderId=fid;existing.url=url;existing.name=platInfo(pid).label;}
+  else{folders.push({id:Date.now(),folderId:fid,name:platInfo(pid).label,platform:pid,url:url});}
   saveDriveFolders(folders);
-  document.getElementById('drive-folder-name-input').value='';
-  document.getElementById('drive-folder-url-input').value='';
-  renderDriveFolderList();
+  logSync(pid,'Folder connected — syncing…','info');
+  renderSyncSettings();
+  ensureAutoSyncInterval();
+  syncAllDrive();
 }
-function removeDriveFolder(id){
-  var folders=getDriveFolders().filter(function(l){return l.id!==id;});
+function disconnectPlatformFolder(pid){
+  var folders=getDriveFolders().filter(function(f){return f.platform!==pid;});
   saveDriveFolders(folders);
-  renderDriveFolderList();
+  logSync(pid,'Folder disconnected.','info');
+  renderSyncSettings();
   if(!folders.length&&!getDriveLinks().length){_DRIVE.status='idle';renderDriveBadge();}
 }
-function renderDriveFolderList(){
-  var el=document.getElementById('drive-folders-list');
+// Session count + month range currently loaded for a platform
+function platformSummary(pid){
+  var rows=(ST.raw||[]).filter(function(r){return (r.platform||'shopee_my')===pid;});
+  if(!rows.length)return null;
+  var months=[];
+  var seen={};
+  rows.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;months.push(r.month);}});
+  var sorted=sortMonths(months);
+  var range=sorted.length?(sorted[0]===sorted[sorted.length-1]?sorted[0]:sorted[0]+' – '+sorted[sorted.length-1]):'';
+  return {count:rows.length,range:range};
+}
+// ── Sync Log ──────────────────────────────────────────────────────
+var _SYNCLOG=[];
+function loadSyncLog(){
+  try{_SYNCLOG=JSON.parse(localStorage.getItem('drive_sync_log')||'[]');}catch(e){_SYNCLOG=[];}
+}
+function logSync(tag,msg,level){
+  _SYNCLOG.unshift({t:new Date().toISOString(),tag:tag,msg:msg,level:level||'info'});
+  if(_SYNCLOG.length>150)_SYNCLOG.length=150;
+  try{localStorage.setItem('drive_sync_log',JSON.stringify(_SYNCLOG));}catch(e){}
+  renderSyncLog();
+}
+function clearSyncLog(){
+  _SYNCLOG=[];
+  try{localStorage.removeItem('drive_sync_log');}catch(e){}
+  renderSyncLog();
+}
+function syncTagLabel(tag){
+  var pi=PLATFORMS.find(function(p){return p.id===tag;});
+  return pi?pi.label:tag;
+}
+function renderSyncLog(){
+  var el=document.getElementById('sync-log-body');
   if(!el)return;
-  var folders=getDriveFolders();
-  if(!folders.length){
-    el.innerHTML='<p style="text-align:center;color:#475569;font-size:12px;padding:10px 0">No folders added yet — add one above.</p>';
-    return;
-  }
-  el.innerHTML=folders.map(function(l){
-    var pi=platInfo(l.platform);
-    var short=l.url.length>55?l.url.substring(0,55)+'…':l.url;
-    return '<div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:rgba(15,23,42,.5);border:1px solid #1e3a5f;border-radius:8px;margin-bottom:6px">'
-      +'<div style="width:7px;height:7px;border-radius:50%;background:'+pi.text+';flex-shrink:0"></div>'
-      +'<div style="flex:1;min-width:0">'
-        +'<div style="font-size:12px;font-weight:600;color:#cbd5e1">📁 '+escHtml(l.name)+'</div>'
-        +'<div style="font-size:10px;color:#475569;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(short)+'</div>'
-      +'</div>'
-      +'<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(71,85,105,.4);color:'+pi.text+'">'+escHtml(pi.label)+'</span>'
-      +'<button onclick="removeDriveFolder('+l.id+')" style="background:none;border:none;color:#475569;cursor:pointer;font-size:15px;padding:2px 5px;line-height:1" title="Remove">✕</button>'
-      +'</div>';
+  if(!_SYNCLOG.length){el.innerHTML='<p style="color:#475569;font-size:12px;padding:4px 0">No sync activity yet.</p>';return;}
+  el.innerHTML=_SYNCLOG.map(function(l){
+    var tm=new Date(l.t);
+    var ts=isNaN(tm.getTime())?'':tm.toLocaleTimeString();
+    var color=l.level==='error'?'#f87171':l.level==='ok'?'#34d399':'#94a3b8';
+    return '<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:'+color+';padding:2px 0;white-space:pre-wrap;word-break:break-word"><span style="color:#475569">'+escHtml(ts)+'</span> <span style="color:#64748b">['+escHtml(syncTagLabel(l.tag))+']</span> '+escHtml(l.msg)+'</div>';
   }).join('');
 }
 // List files in a Drive folder via Drive API, download each, and parse it
@@ -1506,7 +1463,8 @@ function fetchDriveFile(f,key){
 }
 function syncDriveFolderFiles(folder,cb){
   var key=getApiKey();
-  if(!key){cb(0,'Add your Google API key above before syncing a Drive Folder.');return;}
+  if(!key){logSync(folder.platform,'No API key set — skipped.','error');cb(0,'Add your Google API key above before syncing a Drive Folder.');return;}
+  logSync(folder.platform,'Checking folder for files…','info');
   var listUrl='https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+folder.folderId+"' in parents and trashed=false")
     +'&fields='+encodeURIComponent('files(id,name,mimeType)')
     +'&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&key='+encodeURIComponent(key);
@@ -1519,31 +1477,141 @@ function syncDriveFolderFiles(folder,cb){
       var ext=(f.name||'').split('.').pop().toLowerCase();
       return ext==='csv'||ext==='xls'||ext==='xlsx';
     });
-    if(!files.length){cb(0);return;}
+    if(!files.length){logSync(folder.platform,'No CSV/XLS/XLSX files found in folder.','info');cb(0);return;}
     var pending=files.length,added=0,firstErr=null;
     files.forEach(function(f){
       fetchDriveFile(f,key).then(function(fileObj){
         parseOneCSV(fileObj,folder.platform,function(n){
-          added+=(n||0);pending--;if(pending===0)cb(added,firstErr);
+          added+=(n||0);pending--;
+          if(pending===0){
+            logSync(folder.platform,'Synced '+files.length+' file(s) → '+added+' new session(s)'+(firstErr?' (with errors)':''),firstErr?'error':'ok');
+            cb(added,firstErr);
+          }
         });
       }).catch(function(err){
         if(!firstErr)firstErr=(err&&err.message)||String(err);
         console.error('[Drive Sync] File "'+f.name+'" in folder "'+folder.name+'" failed:',err);
-        pending--;if(pending===0)cb(added,firstErr);
+        pending--;
+        if(pending===0){
+          logSync(folder.platform,'Synced with errors: '+firstErr,'error');
+          cb(added,firstErr);
+        }
       });
     });
   }).catch(function(err){
-    cb(0,(err&&err.message)||String(err));
+    var msg=(err&&err.message)||String(err);
+    logSync(folder.platform,'Folder check failed: '+msg,'error');
+    cb(0,msg);
   });
 }
 
+// ── Data Sync Settings panel ─────────────────────────────────────────
+var _SYNC_TIMER=null;
+function ensureAutoSyncInterval(){
+  if(_SYNC_TIMER)return;
+  _SYNC_TIMER=setInterval(function(){
+    if(getDriveLinks().length||getDriveFolders().length)syncAllDrive();
+  },5*60*1000);
+}
+function renderSyncSettings(){
+  var body=document.getElementById('drive-modal-body');
+  if(!body)return;
+  var apiKey=getApiKey();
+  var folders=getDriveFolders();
+  var connectedCount=PLATFORMS.filter(function(p){return folders.some(function(f){return f.platform===p.id;});}).length;
+
+  var header='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-top:8px">'
+    +'<div><h2 style="font-size:19px;font-weight:700;color:#fff;margin:0">⚙️ Data Sync Settings</h2>'
+    +'<p style="font-size:12px;color:#64748b;margin-top:4px">'+connectedCount+' of '+PLATFORMS.length+' platforms connected to Google Drive</p></div>'
+    +'<button onclick="closeDriveModal()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;line-height:1;padding:4px">✕</button>'
+    +'</div>';
+
+  var apiCard='<div class="card" style="padding:16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+    +'<div style="font-size:13px;font-weight:700;color:#fff">🔑 Google API Key</div>'
+    +(apiKey?'<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(52,211,153,.15);color:#34d399">✓ Saved</span>':'')
+    +'</div>'
+    +'<p style="font-size:11px;color:#64748b;margin-bottom:10px">Required to browse folders and read sheets</p>'
+    +'<input id="drive-apikey-input" onchange="saveApiKeyFromInput()" onblur="saveApiKeyFromInput()" value="'+escHtml(apiKey)+'" placeholder="AIza..." style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace"/>'
+    +'<button onclick="saveApiKeyFromInput();renderSyncSettings()" style="margin-top:8px;padding:8px 14px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">✓ Save Key</button>'
+    +'<p style="font-size:10px;color:#475569;margin-top:10px;line-height:1.6">Enable <b style="color:#94a3b8">Google Drive API</b> in Cloud Console, then create a credential → API key. Restrict it to your dashboard\'s domain for safety.</p>'
+    +'</div>';
+
+  var ovGrid=PLATFORMS.map(function(p){
+    var folder=folders.find(function(f){return f.platform===p.id;});
+    var summary=platformSummary(p.id);
+    var connected=!!folder;
+    var dot=connected?(_DRIVE.status==='error'?'#f87171':'#4ade80'):'#475569';
+    var line=connected?(summary?(summary.range+' · '+summary.count+' sessions'):'Connected — not synced yet'):'Not connected';
+    return '<div style="background:rgba(15,23,42,.5);border:1px solid #1e3a5f;border-radius:8px;padding:9px 11px">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
+      +'<div style="width:7px;height:7px;border-radius:50%;background:'+dot+';flex-shrink:0"></div>'
+      +'<span style="font-size:12px;font-weight:700;color:'+p.text+'">'+p.label+'</span>'
+      +'</div>'
+      +'<div style="font-size:10px;color:#64748b">'+escHtml(line)+'</div>'
+      +'</div>';
+  }).join('');
+  var ovCard='<div class="card" style="padding:16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+    +'<div style="font-size:13px;font-weight:700;color:#fff">⚡ Auto-Sync Overview</div>'
+    +'<button id="drive-sync-btn" onclick="syncAllDrive()" style="padding:4px 10px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:6px;color:#34d399;font-size:11px;font-weight:700;cursor:pointer">⟳ Sync Now</button>'
+    +'</div>'
+    +'<p style="font-size:11px;color:#64748b;margin-bottom:12px;line-height:1.6">Paste a <b style="color:#94a3b8">Drive folder URL</b> for each platform. The dashboard auto-loads all files inside and re-checks every <b style="color:#94a3b8">5 minutes</b> for new uploads. Folder must be shared <b style="color:#94a3b8">"Anyone with the link can view."</b></p>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+ovGrid+'</div>'
+    +'</div>';
+
+  var connectCards=PLATFORMS.map(function(p){
+    var folder=folders.find(function(f){return f.platform===p.id;});
+    return '<div class="card" style="padding:14px">'
+      +'<div style="font-size:13px;font-weight:700;color:'+p.text+';margin-bottom:8px">'+(p.brand==='shopee'?'🛒':'🎵')+' '+p.label+'</div>'
+      +'<input id="pf-url-'+p.id+'" value="'+(folder?escHtml(folder.url):'')+'" placeholder="Drive folder URL..." style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box;margin-bottom:8px"/>'
+      +'<div style="display:flex;gap:8px">'
+      +'<button onclick="connectPlatformFolder(\''+p.id+'\')" style="flex:1;padding:8px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">🔍 '+(folder?'Reconnect':'Connect')+'</button>'
+      +(folder?'<button onclick="disconnectPlatformFolder(\''+p.id+'\')" style="padding:8px 12px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);border-radius:7px;color:#f87171;cursor:pointer" title="Disconnect">✕</button>':'')
+      +'</div></div>';
+  }).join('');
+
+  var logCard='<div class="card" style="padding:16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+    +'<div style="font-size:13px;font-weight:700;color:#fff">Sync Log</div>'
+    +'<button onclick="clearSyncLog()" style="background:none;border:none;color:#475569;font-size:11px;cursor:pointer;text-decoration:underline">Clear</button>'
+    +'</div>'
+    +'<div id="sync-log-body" style="max-height:220px;overflow-y:auto;background:rgba(15,23,42,.5);border:1px solid #1e3a5f;border-radius:8px;padding:10px"></div>'
+    +'</div>';
+
+  var advCard='<details style="margin-top:16px">'
+    +'<summary style="cursor:pointer;font-size:12px;font-weight:600;color:#64748b;padding:8px 2px">Advanced: connect a single Google Sheet instead</summary>'
+    +'<div class="card" style="padding:14px;margin-top:8px">'
+    +'<div style="display:flex;flex-direction:column;gap:8px">'
+    +'<input id="drive-name-input" placeholder="Label (e.g. April Stream Data)" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>'
+    +'<div style="display:flex;gap:8px">'
+    +'<select id="drive-plat-input" style="flex:1;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none">'
+    +PLATFORMS.map(function(p){return '<option value="'+p.id+'">'+p.label+'</option>';}).join('')
+    +'</select>'
+    +'<input id="drive-sheet-input" placeholder="Sheet name/tab (optional)" style="flex:2;background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none"/>'
+    +'</div>'
+    +'<input id="drive-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit?usp=sharing" style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box"/>'
+    +'<button onclick="addDriveLink()" style="padding:8px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">+ Add Sheet</button>'
+    +'</div>'
+    +'<div id="drive-links-list" style="margin-top:12px"></div>'
+    +'<p style="font-size:10px;color:#475569;margin-top:10px;line-height:1.6">Sheet must be <b style="color:#94a3b8">Published to web</b> (File → Share → Publish to web → CSV), not just shared.</p>'
+    +'</div></details>';
+
+  body.innerHTML=header
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">'+apiCard+ovCard+'</div>'
+    +'<div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px">Connect Platform Folders</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">'+connectCards+'</div>'
+    +logCard
+    +advCard;
+
+  renderSyncLog();
+  renderDriveList();
+}
 function openDriveModal(){
   _DRIVE.links=getDriveLinks();
-  renderDriveList();
-  renderDriveFolderList();
-  var ak=document.getElementById('drive-apikey-input');
-  if(ak)ak.value=getApiKey();
-  document.getElementById('drive-modal').style.display='flex';
+  loadSyncLog();
+  document.getElementById('drive-modal').style.display='block';
+  renderSyncSettings();
 }
 function closeDriveModal(){
   document.getElementById('drive-modal').style.display='none';
@@ -1561,6 +1629,8 @@ function addDriveLink(){
   document.getElementById('drive-url-input').value='';
   document.getElementById('drive-sheet-input').value='';
   renderDriveList();
+  ensureAutoSyncInterval();
+  syncAllDrive();
 }
 function removeDriveLink(id){
   _DRIVE.links=_DRIVE.links.filter(function(l){return l.id!==id;});
@@ -1628,6 +1698,7 @@ function syncAllDrive(onDone){
 
   links.forEach(function(link){
     tasks.push(function(cb){
+      logSync(link.platform,'Checking sheet "'+link.name+'"…','info');
       var csvUrl=convertDriveUrlToCsv(link.url);
       fetch(csvUrl)
         .then(function(r){
@@ -1647,12 +1718,16 @@ function syncAllDrive(onDone){
           var dataRows=rawRows.slice(hIdx+1).map(function(row){
             var obj={};headers.forEach(function(h,i){obj[h]=row[i]!==undefined?row[i]:'';});return obj;
           });
-          processRowData(dataRows,link.platform,function(n){cb(n);});
+          processRowData(dataRows,link.platform,function(n){
+            logSync(link.platform,'Sheet "'+link.name+'" → '+n+' new session(s)','ok');
+            cb(n);
+          });
         })
         .catch(function(err){
           hasError=true;
           errDetail=err&&err.message?err.message:String(err);
           console.error('[Drive Sync] Sheet "'+link.name+'" failed:', err);
+          logSync(link.platform,'Sheet "'+link.name+'" failed: '+errDetail,'error');
           cb(0);
         });
     });
@@ -1681,6 +1756,9 @@ function syncAllDrive(onDone){
       }
     }
     if(totalAdded>0){saveToStorage();rebuildHostsFromData();render();}
+    logSync('system',totalAdded>0?('Sync complete — '+totalAdded+' new session(s) total'):(hasError?'Sync finished with errors':'Sync complete — no new sessions'),hasError?'error':(totalAdded>0?'ok':'info'));
+    var modalEl=document.getElementById('drive-modal');
+    if(modalEl&&modalEl.style.display!=='none')renderSyncSettings();
     if(onDone)onDone(totalAdded);
   }
   if(!tasks.length){finish();return;}
@@ -1915,12 +1993,14 @@ document.addEventListener('click',function(e){
 (function doInit(){
   function afterBaseLoad(){
     render();
-    // Auto-sync saved Drive links/folders on every page load
+    loadSyncLog();
+    // Auto-sync saved Drive links/folders on every page load, then every 5 min
     var driveLinks=getDriveLinks(),driveFolders=getDriveFolders();
     if(driveLinks.length||driveFolders.length){
       _DRIVE.links=driveLinks;
       renderDriveBadge(); // show idle badge while syncing starts
       syncAllDrive();
+      ensureAutoSyncInterval();
     }
   }
   if(loadFromStorage()){rebuildHostsFromData();saveToStorage();afterBaseLoad();return;}
