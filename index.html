@@ -1461,6 +1461,27 @@ function fetchDriveFile(f,key){
     return new File([blob],fname,{type:blob.type});
   });
 }
+// One retry after a short delay for transient network failures (e.g. "Failed to fetch")
+function fetchDriveFileWithRetry(f,key,retriesLeft){
+  return fetchDriveFile(f,key).catch(function(err){
+    if(retriesLeft<=0)throw err;
+    return new Promise(function(res){setTimeout(res,800);}).then(function(){return fetchDriveFileWithRetry(f,key,retriesLeft-1);});
+  });
+}
+// Run async workers over items with at most `limit` in flight at once —
+// downloading a whole folder in parallel can trip Drive API/browser connection limits
+function runWithLimit(items,limit,worker,done){
+  if(!items.length){done();return;}
+  var idx=0,active=0,finished=0;
+  function next(){
+    if(finished===items.length){done();return;}
+    while(active<limit&&idx<items.length){
+      var item=items[idx++];active++;
+      worker(item,function(){active--;finished++;next();});
+    }
+  }
+  next();
+}
 function syncDriveFolderFiles(folder,cb){
   var key=getApiKey();
   if(!key){logSync(folder.platform,'No API key set — skipped.','error');cb(0,'Add your Google API key above before syncing a Drive Folder.');return;}
@@ -1478,25 +1499,18 @@ function syncDriveFolderFiles(folder,cb){
       return ext==='csv'||ext==='xls'||ext==='xlsx';
     });
     if(!files.length){logSync(folder.platform,'No CSV/XLS/XLSX files found in folder.','info');cb(0);return;}
-    var pending=files.length,added=0,firstErr=null;
-    files.forEach(function(f){
-      fetchDriveFile(f,key).then(function(fileObj){
-        parseOneCSV(fileObj,folder.platform,function(n){
-          added+=(n||0);pending--;
-          if(pending===0){
-            logSync(folder.platform,'Synced '+files.length+' file(s) → '+added+' new session(s)'+(firstErr?' (with errors)':''),firstErr?'error':'ok');
-            cb(added,firstErr);
-          }
-        });
+    var added=0,firstErr=null;
+    runWithLimit(files,4,function(f,done){
+      fetchDriveFileWithRetry(f,key,1).then(function(fileObj){
+        parseOneCSV(fileObj,folder.platform,function(n){added+=(n||0);done();});
       }).catch(function(err){
         if(!firstErr)firstErr=(err&&err.message)||String(err);
         console.error('[Drive Sync] File "'+f.name+'" in folder "'+folder.name+'" failed:',err);
-        pending--;
-        if(pending===0){
-          logSync(folder.platform,'Synced with errors: '+firstErr,'error');
-          cb(added,firstErr);
-        }
+        done();
       });
+    },function(){
+      logSync(folder.platform,'Synced '+files.length+' file(s) → '+added+' new session(s)'+(firstErr?' (with errors: '+firstErr+')':''),firstErr?'error':'ok');
+      cb(added,firstErr);
     });
   }).catch(function(err){
     var msg=(err&&err.message)||String(err);
@@ -1685,6 +1699,9 @@ function renderDriveBadge(){
 function syncAllDrive(onDone){
   var links=getDriveLinks(),folders=getDriveFolders();
   if(!links.length&&!folders.length){if(onDone)onDone(0);return;}
+  // Avoid overlapping syncs (e.g. rapid Reconnect clicks, or a click landing mid auto-sync) —
+  // running many syncs at once multiplies parallel Drive API requests and can trip rate limits
+  if(_DRIVE.status==='syncing'){if(onDone)onDone(0);return;}
   _DRIVE.status='syncing';_DRIVE.error='';
   renderDriveBadge();
   var banner=document.getElementById('drive-error-banner');
