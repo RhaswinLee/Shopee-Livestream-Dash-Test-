@@ -117,7 +117,10 @@ function migratePlatform(p){
   return p;
 }
 function migrateRawPlatforms(raw){
-  (raw||[]).forEach(function(r){r.platform=migratePlatform(r.platform);});
+  (raw||[]).forEach(function(r){
+    r.platform=migratePlatform(r.platform);
+    if(!r.account)r.account=brandOf(r.platform)==='shopee'?'Hygr.my':'Unknown';
+  });
   return raw;
 }
 var HOSTS = ['YANA','FILZA','MAS','QAQA','LISA','SITI'];
@@ -270,7 +273,7 @@ function genMock(){
       var sh=Math.floor(rng()*20)+2,sm=Math.floor(rng()*4)*15;
       var vw=Math.floor(b.vw*mult*noise),cl=Math.floor(vw*(0.15+rng()*0.2)),or=Math.floor(cl*(0.08+rng()*0.12));
       var ds=cur.toISOString().split('T')[0];
-      rows.push({id:id++,date:ds,month:mKey(ds),streamName:SN[h][Math.floor(rng()*3)],host:h,platform:'shopee_my',startHour:sh,startTime:p2(sh)+':'+p2(sm),duration:Math.floor(b.dur*(0.8+rng()*0.4)),viewers:vw,atc:Math.floor(b.atc*mult*noise),uniqueClicks:cl,orders:or,gmv:Math.floor(b.gmv*mult*noise),ctr:vw>0?cl/vw*100:0,ctor:cl>0?or/cl*100:0});
+      rows.push({id:id++,date:ds,month:mKey(ds),streamName:SN[h][Math.floor(rng()*3)],host:h,platform:'shopee_my',account:'Hygr.my',startHour:sh,startTime:p2(sh)+':'+p2(sm),duration:Math.floor(b.dur*(0.8+rng()*0.4)),viewers:vw,atc:Math.floor(b.atc*mult*noise),uniqueClicks:cl,orders:or,gmv:Math.floor(b.gmv*mult*noise),ctr:vw>0?cl/vw*100:0,ctor:cl>0?or/cl*100:0});
     }
     cur.setDate(cur.getDate()+1);
   }
@@ -468,9 +471,9 @@ function renderKPIs(kpi){
 }
 
 function renderTabs(){
-  var tabs=['overview','timeslots','hosts','insights','bundles','league','hotspot','analysis','schedule'];
-  var labels=['Overview','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis','Schedule Planner'];
-  var icons=['📊','⏱️','🎤','💡','📦','🏆','🔥','📈','📅'];
+  var tabs=['overview','liveperf','timeslots','hosts','insights','bundles','league','hotspot','analysis','schedule'];
+  var labels=['Overview','Live Performance','Time Slots','Host Deep-Dive','Strategic Insights','Bundles','League Table','Hotspot Matrix','Stream Analysis','Schedule Planner'];
+  var icons=['📊','📡','⏱️','🎤','💡','📦','🏆','🔥','📈','📅'];
   var el=document.getElementById('sidebar');
   if(!el)return;
   var nav=tabs.map(function(t,i){
@@ -483,6 +486,7 @@ function renderPanel(f,kpi,hd,sd){
   destroyAll();
   var el=document.getElementById('panel');
   if(ST.tab==='overview') el.innerHTML=tplOverview();
+  else if(ST.tab==='liveperf') el.innerHTML=tplLivePerf(f);
   else if(ST.tab==='timeslots') el.innerHTML=tplSlots(sd);
   else if(ST.tab==='hosts') el.innerHTML=tplHosts(hd);
   else if(ST.tab==='insights') el.innerHTML=tplInsights();
@@ -504,6 +508,74 @@ function tplOverview(){
     +'<div class="card"><div class="card-title">Sessions &amp; Live Hours</div><div style="height:210px"><canvas id="c-sess"></canvas></div></div>'
     +'<div class="card" style="grid-column:1/3"><div class="card-title">Host GMV Distribution</div><div style="height:190px"><canvas id="c-hdist"></canvas></div></div>'
     +'</div>';
+}
+
+// ── LIVE PERFORMANCE (per-account, 2h-slot monthly breakdown) ───────
+var LP_SLOTS=['12am-2am','2am-4am','4am-6am','6am-8am','8am-10am','10am-12pm','12pm-2pm','2pm-4pm','4pm-6pm','6pm-8pm','8pm-10pm','10pm-12am'];
+var LP_TINTS=['#34d39926','#60a5fa26','#a78bfa26','#38bdf826','#f472b626','#fbbf2426','#fb923c26','#4ade8026','#818cf826','#f8717126','#facc1526','#2dd4bf26'];
+function fmtHM(mins){
+  var h=Math.floor(mins/60),m=Math.round(mins-h*60);
+  return h+'h '+m+'min';
+}
+function tplLivePerf(f){
+  var out='';
+  ['shopee','tiktok'].forEach(function(brand){
+    var brows=f.filter(function(r){return brandOf(r.platform)===brand;});
+    if(!brows.length)return;
+    var accounts=[],seen={};
+    brows.forEach(function(r){var a=r.account||'Unknown';if(!seen[a]){seen[a]=1;accounts.push(a);}});
+    accounts.sort(function(a,b){return a.localeCompare(b);});
+    out+='<h2 style="font-size:19px;font-weight:800;color:#fff;text-decoration:underline;text-decoration-color:#ef4444;text-underline-offset:6px;margin:4px 0 4px">'+(brand==='shopee'?'Shopee':'TikTok')+' Live Performance</h2>';
+    accounts.forEach(function(acct){
+      var arows=brows.filter(function(r){return (r.account||'Unknown')===acct;});
+      out+=tplLivePerfAccount(acct,arows);
+    });
+  });
+  if(!out)out='<div class="card"><div class="card-title">Live Performance</div><p style="color:#64748b;font-size:13px">No sessions in the current filter.</p></div>';
+  return '<div style="display:flex;flex-direction:column;gap:14px">'+out+'</div>';
+}
+function tplLivePerfAccount(acct,rows){
+  var months=[],seen={};
+  rows.forEach(function(r){if(r.month&&!seen[r.month]){seen[r.month]=1;months.push(r.month);}});
+  months=sortMonths(months);
+  if(!months.length)return '';
+  var banner='<div style="display:inline-block;border:1px solid #334155;border-radius:6px;padding:6px 14px;margin-bottom:12px"><span style="font-size:12px;font-weight:700;color:#e2e8f0;letter-spacing:.03em">LIVE SALES OVERVIEW — '+escHtml(acct)+'</span></div>';
+  var monthData=months.map(function(mo){
+    var mrows=rows.filter(function(r){return r.month===mo;});
+    var slots=LP_SLOTS.map(function(lbl,i){
+      var srows=mrows.filter(function(r){return Math.floor((r.startHour||0)/2)===i;});
+      return {label:lbl,sessions:srows.length,mins:srows.reduce(function(s,r){return s+r.duration;},0),sales:srows.reduce(function(s,r){return s+r.gmv;},0)};
+    });
+    return {month:mo,slots:slots,
+      totalSessions:mrows.length,
+      totalMins:mrows.reduce(function(s,r){return s+r.duration;},0),
+      totalSales:mrows.reduce(function(s,r){return s+r.gmv;},0)};
+  });
+  var head='<tr>'+monthData.map(function(md){
+    return '<th style="text-align:right">Hour</th><th style="text-align:right">Sessions</th><th style="text-align:center;background:rgba(250,204,21,.18);color:#fde68a">'+escHtml(md.month)+'</th><th style="text-align:right">Sales</th><th style="width:20px;border:none"></th>';
+  }).join('')+'</tr>';
+  var bodyRows='';
+  for(var i=0;i<LP_SLOTS.length;i++){
+    bodyRows+='<tr>';
+    monthData.forEach(function(md){
+      var s=md.slots[i];
+      bodyRows+='<td style="text-align:right;color:#94a3b8">'+(s.mins>0?fmtHM(s.mins):'0')+'</td>'
+        +'<td style="text-align:right;color:#cbd5e1">'+(s.sessions||'0')+'</td>'
+        +'<td style="text-align:left;background:'+LP_TINTS[i]+';color:#e2e8f0;font-weight:600;padding-left:10px">'+s.label+'</td>'
+        +'<td style="text-align:right;'+(s.sales>0?'color:#34d399;font-weight:700':'color:#475569')+'">'+(s.sales>0?fR(s.sales):'0')+'</td>'
+        +'<td style="border:none"></td>';
+    });
+    bodyRows+='</tr>';
+  }
+  var totalsRow='<tr style="border-top:2px solid #334155">'+monthData.map(function(md){
+    return '<td style="border:none"></td>'
+      +'<td style="text-align:right;font-weight:700;color:#fff">'+md.totalSessions+'</td>'
+      +'<td style="text-align:left;font-weight:700;color:#fbbf24;white-space:nowrap">Live Hour '+fmtHM(md.totalMins)+'</td>'
+      +'<td style="text-align:right;font-weight:700;color:#34d399">'+fR(md.totalSales)+'</td>'
+      +'<td style="border:none"></td>';
+  }).join('')+'</tr>';
+  var table='<div style="overflow-x:auto"><table><thead>'+head+'</thead><tbody>'+bodyRows+totalsRow+'</tbody></table></div>';
+  return '<div class="card">'+banner+table+'</div>';
 }
 
 function tplSlots(sd){
@@ -1875,6 +1947,9 @@ function processRowData(data,plat,done){
   var cc=fc(['unique click','click','klik'])||keys.find(function(k){return k.toLowerCase().indexOf('engaged')>=0;})||null;
   var oc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('order')>=0&&kl.indexOf('confirmed')>=0&&kl.indexOf('item')<0)||(kl.indexOf('order')>=0&&kl.indexOf('gmv')<0&&kl.indexOf('revenue')<0&&kl.indexOf('amount')<0);})||fc(['order','pesanan']);
   var gc=keys.find(function(k){var kl=k.toLowerCase();return (kl.indexOf('sales')>=0&&kl.indexOf('confirmed')>=0)||(kl.indexOf('revenue')>=0&&kl.indexOf('avg')<0)||(kl==='gmv')||(kl.indexOf('gmv')>=0&&kl.indexOf('usd')>=0)||(kl.indexOf('product revenue')>=0);})||fc(['gmv','revenue','sales','amount']);
+  // TikTok exports can cover several accounts in one file — read the account name per row.
+  // Shopee only ever runs one account, so it's fixed rather than column-detected.
+  var acCol=fc(['account name','tiktok account','shop name','channel name','account','channel','creator']);
   var rows=data.map(function(r){
     var rdt=String(stc&&r[stc]!=null?r[stc]:'');
     var ds='',sh=12,startStr='12:00';
@@ -1897,7 +1972,9 @@ function processRowData(data,plat,done){
     if(dm3){durMins=parseInt(dm3[1])*60+parseInt(dm3[2])+parseInt(dm3[3])/60;}
     else{var dm2=durRaw.match(/(\d+):(\d+)/);if(dm2)durMins=parseInt(dm2[1])*60+parseInt(dm2[2]);else durMins=pNum(durRaw);}
     var nm=String(nc&&r[nc]!=null?r[nc]:'');
-    return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),platform:migratePlatform(plat),startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
+    var mp=migratePlatform(plat);
+    var acct=brandOf(mp)==='shopee'?'Hygr.my':(acCol&&r[acCol]!=null&&String(r[acCol]).trim()?String(r[acCol]).trim():'Unknown');
+    return{date:ds,month:mKey(ds),streamName:nm,host:parseHost(nm),platform:mp,account:acct,startHour:sh,startTime:startStr,duration:durMins,viewers:pNum(vc?r[vc]:0),atc:pNum(ac?r[ac]:0),uniqueClicks:pNum(cc?r[cc]:0),orders:pNum(oc?r[oc]:0),gmv:pNum(gc?r[gc]:0),ctr:0,ctor:0};
   }).filter(function(r){return r.gmv>0||r.viewers>0||r.orders>0||r.atc>0;});
   rows.forEach(function(r){r.ctr=r.viewers>0?r.uniqueClicks/r.viewers*100:0;r.ctor=r.uniqueClicks>0?r.orders/r.uniqueClicks*100:0;});
   // Diagnostic: show column mapping when nothing was found
