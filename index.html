@@ -92,6 +92,7 @@ tr:hover td{background:rgba(51,65,85,.3)}
   </div>
 </div>
 
+<script src="drive-sync.js"></script>
 <script>
 // ── CONSTANTS ──────────────────────────────────────────────────────
 var PLATFORMS = [
@@ -1372,6 +1373,7 @@ function setAnalysisCustTo(v){ST.analysisCustTo=Math.max(0,Math.min(23,v||23));r
 function clearData(){
   ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';
   try{localStorage.removeItem('shopee_live');}catch(e){}
+  if(typeof DriveSync!=='undefined')DriveSync.forgetCache();
   render();
   var cw=document.getElementById('modal-clear-wrap');
   if(cw)cw.style.display='none';
@@ -1384,6 +1386,7 @@ function clearPlatformData(plat){
   var label=platInfo(plat).label;
   if(!confirm('Remove all '+label+' data? This cannot be undone.'))return;
   ST.raw=ST.raw.filter(function(r){return(r.platform||'shopee_my')!==plat;});
+  if(typeof DriveSync!=='undefined')DriveSync.forgetCache(plat);
   if(!ST.raw.length){ST.raw=genMock();ST.isDemo=true;ST.filesLoaded=0;ST.month='All';ST.hostSel='';}
   else{ST.isDemo=false;ST.month='All';}
   saveToStorage();render();openModal();
@@ -1519,75 +1522,50 @@ function renderSyncLog(){
     return '<div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:'+color+';padding:2px 0;white-space:pre-wrap;word-break:break-word"><span style="color:#475569">'+escHtml(ts)+'</span> <span style="color:#64748b">['+escHtml(syncTagLabel(l.tag))+']</span> '+escHtml(l.msg)+'</div>';
   }).join('');
 }
-// List files in a Drive folder via Drive API, download each, and parse it
-function fetchDriveFile(f,key){
-  var isNativeSheet=f.mimeType==='application/vnd.google-apps.spreadsheet';
-  var url=isNativeSheet
-    ?'https://www.googleapis.com/drive/v3/files/'+f.id+'/export?mimeType=text%2Fcsv&key='+encodeURIComponent(key)
-    :'https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media&key='+encodeURIComponent(key);
-  return fetch(url).then(function(r){
-    if(!r.ok)throw new Error('HTTP '+r.status+' fetching "'+f.name+'"');
-    return r.blob();
-  }).then(function(blob){
-    var fname=isNativeSheet?(f.name+'.csv'):f.name;
-    return new File([blob],fname,{type:blob.type});
-  });
-}
-// One retry after a short delay for transient network failures (e.g. "Failed to fetch")
-function fetchDriveFileWithRetry(f,key,retriesLeft){
-  return fetchDriveFile(f,key).catch(function(err){
-    if(retriesLeft<=0)throw err;
-    return new Promise(function(res){setTimeout(res,800);}).then(function(){return fetchDriveFileWithRetry(f,key,retriesLeft-1);});
-  });
-}
-// Run async workers over items with at most `limit` in flight at once —
-// downloading a whole folder in parallel can trip Drive API/browser connection limits
-function runWithLimit(items,limit,worker,done){
-  if(!items.length){done();return;}
-  var idx=0,active=0,finished=0;
-  function next(){
-    if(finished===items.length){done();return;}
-    while(active<limit&&idx<items.length){
-      var item=items[idx++];active++;
-      worker(item,function(){active--;finished++;next();});
-    }
+// Bumped by Clear & Resync so an in-flight sync cannot write sessions or
+// file-revision cache back after the user has wiped them.
+var _DRIVE_EPOCH=0;
+var _DRIVE_AGAIN=null;
+// List files in a Drive folder, download the ones that changed, and parse them.
+// Bytes go through /api/drive-download so a CORS-less Google response still
+// yields a status. One download at a time, shared across folders.
+function syncDriveFolderFiles(folder,cb,opts){
+  opts=opts||{};
+  if(typeof DriveSync==='undefined'){
+    logSync(folder.platform,'Drive sync script failed to load. Refresh the page.','error');
+    cb(0,'Drive sync script failed to load. Refresh the page.');
+    return;
   }
-  next();
-}
-function syncDriveFolderFiles(folder,cb){
-  var key=getApiKey();
-  if(!key){logSync(folder.platform,'No API key set — skipped.','error');cb(0,'Add your Google API key above before syncing a Drive Folder.');return;}
-  logSync(folder.platform,'Checking folder for files…','info');
-  var listUrl='https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+folder.folderId+"' in parents and trashed=false")
-    +'&fields='+encodeURIComponent('files(id,name,mimeType)')
-    +'&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&key='+encodeURIComponent(key);
-  fetch(listUrl).then(function(r){
-    if(!r.ok)return r.json().catch(function(){return null;}).then(function(j){throw new Error((j&&j.error&&j.error.message)||('HTTP '+r.status));});
-    return r.json();
-  }).then(function(json){
-    var files=(json.files||[]).filter(function(f){
-      if(f.mimeType==='application/vnd.google-apps.spreadsheet')return true;
-      var ext=(f.name||'').split('.').pop().toLowerCase();
-      return ext==='csv'||ext==='xls'||ext==='xlsx';
-    });
-    if(!files.length){logSync(folder.platform,'No CSV/XLS/XLSX files found in folder.','info');cb(0);return;}
-    var added=0,firstErr=null;
-    runWithLimit(files,4,function(f,done){
-      fetchDriveFileWithRetry(f,key,1).then(function(fileObj){
-        parseOneCSV(fileObj,folder.platform,function(n){added+=(n||0);done();});
-      }).catch(function(err){
-        if(!firstErr)firstErr=(err&&err.message)||String(err);
-        console.error('[Drive Sync] File "'+f.name+'" in folder "'+folder.name+'" failed:',err);
-        done();
+  var cache=opts.cache||DriveSync.loadCache();
+  DriveSync.syncFolderFiles({
+    folder:folder,
+    apiKey:getApiKey(),
+    cache:cache,
+    force:!!opts.force,
+    concurrency:1,
+    pauseMs:opts.pauseMs!=null?opts.pauseMs:300,
+    useProxy:true,
+    parseFile:function(fileObj,platform){
+      return new Promise(function(resolve,reject){
+        parseOneCSV(fileObj,platform,function(n,err){
+          if(err)reject(new Error(err));
+          else resolve(n||0);
+        },opts.epoch);
       });
-    },function(){
-      logSync(folder.platform,'Synced '+files.length+' file(s) → '+added+' new session(s)'+(firstErr?' (with errors: '+firstErr+')':''),firstErr?'error':'ok');
-      cb(added,firstErr);
-    });
+    },
+    log:function(level,msg){logSync(folder.platform,msg,level);},
+    onFileError:function(f,err){
+      console.error('[Drive Sync] File "'+f.name+'" in folder "'+folder.name+'" failed:',err);
+    },
+    persistCache:function(next){
+      if(opts.epoch!=null&&opts.epoch!==_DRIVE_EPOCH)return;
+      DriveSync.saveCache(next);
+    }
+  }).then(function(result){
+    if(!opts.cache)DriveSync.saveCache(cache);
+    cb(result.added||0,result.error||null);
   }).catch(function(err){
-    var msg=(err&&err.message)||String(err);
-    logSync(folder.platform,'Folder check failed: '+msg,'error');
-    cb(0,msg);
+    cb(0,(err&&err.message)||String(err));
   });
 }
 
@@ -1607,13 +1585,15 @@ function clearAndResyncFromDrive(){
     +(unconnected.length?'\n\n'+unconnected.join(', ')+' — no folder/sheet connected, existing data for these will be left as-is.':'')
     +'\n\nThis cannot be undone. Continue?';
   if(!confirm(msg))return;
+  _DRIVE_EPOCH++;
   ST.raw=(ST.raw||[]).filter(function(r){return connectedPids.indexOf(r.platform||'shopee_my')<0;});
   ST.isDemo=false;
   saveToStorage();
+  if(typeof DriveSync!=='undefined')connectedPids.forEach(function(pid){DriveSync.forgetCache(pid);});
   logSync('system','Cleared existing data for: '+labels+' — resyncing from Drive…','info');
   render();
   renderSyncSettings();
-  syncAllDrive();
+  syncAllDrive(null,{force:true});
 }
 // ── Data Sync Settings panel ─────────────────────────────────────────
 var _SYNC_TIMER=null;
@@ -1646,7 +1626,7 @@ function renderSyncSettings(){
     +'<p style="font-size:11px;color:#64748b;margin-bottom:10px">Required to browse folders and read sheets</p>'
     +'<input id="drive-apikey-input" onchange="saveApiKeyFromInput()" onblur="saveApiKeyFromInput()" value="'+escHtml(apiKey)+'" placeholder="AIza..." style="background:#0f172a;border:1px solid #334155;border-radius:7px;padding:8px 10px;color:#cbd5e1;font-size:12px;outline:none;width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace"/>'
     +'<button onclick="saveApiKeyFromInput();renderSyncSettings()" style="margin-top:8px;padding:8px 14px;background:rgba(99,102,241,.25);border:1px solid #6366f1;border-radius:7px;color:#a5b4fc;font-size:12px;font-weight:700;cursor:pointer">✓ Save Key</button>'
-    +'<p style="font-size:10px;color:#475569;margin-top:10px;line-height:1.6">Enable <b style="color:#94a3b8">Google Drive API</b> in Cloud Console, then create a credential → API key. Restrict it to your dashboard\'s domain for safety.</p>'
+    +'<p style="font-size:10px;color:#475569;margin-top:10px;line-height:1.6">Enable <b style="color:#94a3b8">Google Drive API</b> in Cloud Console, then create a credential → API key. Restrict it to your dashboard\'s domain for safety. If a download is blocked, the sync log shows Google\'s HTTP status instead of "Failed to fetch".</p>'
     +'</div>';
 
   var ovGrid=PLATFORMS.map(function(p){
@@ -1668,7 +1648,7 @@ function renderSyncSettings(){
     +'<div style="font-size:13px;font-weight:700;color:#fff">⚡ Auto-Sync Overview</div>'
     +'<button id="drive-sync-btn" onclick="syncAllDrive()" style="padding:4px 10px;background:rgba(52,211,153,.15);border:1px solid #34d399;border-radius:6px;color:#34d399;font-size:11px;font-weight:700;cursor:pointer">⟳ Sync Now</button>'
     +'</div>'
-    +'<p style="font-size:11px;color:#64748b;margin-bottom:12px;line-height:1.6">Paste a <b style="color:#94a3b8">Drive folder URL</b> for each platform. The dashboard auto-loads all files inside and re-checks every <b style="color:#94a3b8">5 minutes</b> for new uploads. Folder must be shared <b style="color:#94a3b8">"Anyone with the link can view."</b></p>'
+    +'<p style="font-size:11px;color:#64748b;margin-bottom:12px;line-height:1.6">Paste a <b style="color:#94a3b8">Drive folder URL</b> for each platform. The dashboard auto-loads all files inside and re-checks every <b style="color:#94a3b8">5 minutes</b>. Unchanged files are skipped. Folder must be shared <b style="color:#94a3b8">"Anyone with the link can view."</b></p>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+ovGrid+'</div>'
     +'</div>';
 
@@ -1794,12 +1774,19 @@ function renderDriveBadge(){
   }
 }
 
-function syncAllDrive(onDone){
+function syncAllDrive(onDone,opts){
+  opts=opts||{};
   var links=getDriveLinks(),folders=getDriveFolders();
   if(!links.length&&!folders.length){if(onDone)onDone(0);return;}
   // Avoid overlapping syncs (e.g. rapid Reconnect clicks, or a click landing mid auto-sync) —
-  // running many syncs at once multiplies parallel Drive API requests and can trip rate limits
-  if(_DRIVE.status==='syncing'){if(onDone)onDone(0);return;}
+  // running many syncs at once multiplies parallel Drive API requests and can trip rate limits.
+  // A Clear & Resync that lands mid-sync is remembered and run once this one finishes.
+  if(_DRIVE.status==='syncing'){
+    if(opts.force)_DRIVE_AGAIN={force:true};
+    if(onDone)onDone(0);
+    return;
+  }
+  var epoch=_DRIVE_EPOCH;
   _DRIVE.status='syncing';_DRIVE.error='';
   renderDriveBadge();
   var banner=document.getElementById('drive-error-banner');
@@ -1815,7 +1802,7 @@ function syncAllDrive(onDone){
     tasks.push(function(cb){
       logSync(link.platform,'Checking sheet "'+link.name+'"…','info');
       var csvUrl=convertDriveUrlToCsv(link.url);
-      fetch(csvUrl)
+      fetch(csvUrl,{credentials:'omit'})
         .then(function(r){
           if(!r.ok)throw new Error('HTTP '+r.status);
           return r.text();
@@ -1834,13 +1821,14 @@ function syncAllDrive(onDone){
             var obj={};headers.forEach(function(h,i){obj[h]=row[i]!==undefined?row[i]:'';});return obj;
           });
           processRowData(dataRows,link.platform,function(n){
+            if(epoch!==_DRIVE_EPOCH){cb(0);return;}
             logSync(link.platform,'Sheet "'+link.name+'" → '+n+' new session(s)','ok');
             cb(n);
-          });
+          },epoch);
         })
         .catch(function(err){
           hasError=true;
-          errDetail=err&&err.message?err.message:String(err);
+          errDetail=(typeof DriveSync!=='undefined')?DriveSync.explainFetchFailure(err):(err&&err.message?err.message:String(err));
           console.error('[Drive Sync] Sheet "'+link.name+'" failed:', err);
           logSync(link.platform,'Sheet "'+link.name+'" failed: '+errDetail,'error');
           cb(0);
@@ -1848,17 +1836,32 @@ function syncAllDrive(onDone){
     });
   });
 
+  var cache=(typeof DriveSync!=='undefined')?DriveSync.loadCache():{};
   folders.forEach(function(folder){
     tasks.push(function(cb){
       syncDriveFolderFiles(folder,function(added,err){
+        if(epoch!==_DRIVE_EPOCH){cb(0);return;}
         if(err){hasError=true;errDetail=err;console.error('[Drive Sync] Folder "'+folder.name+'" failed:',err);}
         cb(added);
-      });
+      },{force:!!opts.force,cache:cache,epoch:epoch});
     });
   });
 
   var pending=tasks.length;
   function finish(){
+    var again=_DRIVE_AGAIN;
+    _DRIVE_AGAIN=null;
+    // Clear & Resync bumped the epoch while this run was still downloading.
+    // Drop its result so it cannot overwrite the wiped sessions; the queued
+    // resync is the one that counts.
+    if(epoch!==_DRIVE_EPOCH){
+      _DRIVE.status='idle';
+      renderDriveBadge();
+      if(btn){btn.disabled=false;btn.textContent='⟳ Sync Now';}
+      if(onDone)onDone(0);
+      if(again)syncAllDrive(null,again);
+      return;
+    }
     _DRIVE.status=hasError?'error':'ok';
     _DRIVE.error=errDetail;
     renderDriveBadge();
@@ -1875,6 +1878,7 @@ function syncAllDrive(onDone){
     var modalEl=document.getElementById('drive-modal');
     if(modalEl&&modalEl.style.display!=='none')renderSyncSettings();
     if(onDone)onDone(totalAdded);
+    if(again)syncAllDrive(null,again);
   }
   if(!tasks.length){finish();return;}
   tasks.forEach(function(t){
@@ -1930,7 +1934,8 @@ function handleFile(e){
 }
 
 // Shared row processor — called by both CSV and Excel paths
-function processRowData(data,plat,done){
+function processRowData(data,plat,done,epoch){
+  if(epoch!=null&&epoch!==_DRIVE_EPOCH){if(done)done(0);return;}
   if(!data||!data.length){if(done)done(0);return;}
   // Normalise keys: trim whitespace, strip BOM from first key
   var rawKeys=Object.keys(data[0]);
@@ -1997,12 +2002,12 @@ function processRowData(data,plat,done){
 }
 
 // Parse one file (CSV, XLS, XLSX) and merge into ST.raw
-function parseOneCSV(f,plat,done){
+function parseOneCSV(f,plat,done,epoch){
   var ext=(f.name||'').split('.').pop().toLowerCase();
   if(ext==='xls'||ext==='xlsx'){
     if(typeof XLSX==='undefined'){
       alert('Excel library failed to load. Please refresh the page and try again, or use CSV format.');
-      if(done)done(0);return;
+      if(done)done(0,'Excel library failed to load');return;
     }
     var reader=new FileReader();
     reader.onload=function(e){
@@ -2012,14 +2017,14 @@ function parseOneCSV(f,plat,done){
         // raw:false → all cells as display strings (same pipeline as CSV)
         var data=XLSX.utils.sheet_to_json(ws,{raw:false,defval:''});
         if(!data.length){alert('Excel file appears empty or has no header row on Sheet 1.');if(done)done(0);return;}
-        processRowData(data,plat,done);
+        processRowData(data,plat,done,epoch);
       }catch(err){
         console.error('Excel parse error:',err);
         alert('Could not read Excel file: '+err.message+'\nTry File → Save As → .xlsx in Excel 2007+ and re-upload.');
-        if(done)done(0);
+        if(done)done(0,err.message||'Could not read Excel file');
       }
     };
-    reader.onerror=function(){alert('Could not read file.');if(done)done(0);};
+    reader.onerror=function(){alert('Could not read file.');if(done)done(0,'Could not read file.');};
     reader.readAsArrayBuffer(f);
   } else {
     // Parse raw (no header) so we can skip TikTok metadata rows at top
@@ -2040,7 +2045,7 @@ function parseOneCSV(f,plat,done){
         headers.forEach(function(h,i){obj[h]=row[i]!==undefined?row[i]:'';});
         return obj;
       });
-      processRowData(dataRows,plat,done);
+      processRowData(dataRows,plat,done,epoch);
     }});
   }
 }
