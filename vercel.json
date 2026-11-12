@@ -1,6 +1,7 @@
 {
   "version": 2,
   "routes": [
+    { "handle": "filesystem" },
     { "src": "/", "dest": "/index.html" },
     { "src": "/classic", "dest": "/classic.html" },
     { "src": "/dashboard", "dest": "/classic.html" }
